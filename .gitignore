@@ -1,0 +1,10 @@
+*.o
+build/
+/nob
+/nob.old
+/extern/raylib/examples
+/extern/raylib/logo
+/extern/raylib/projects
+/extern/raylib/tools
+/extern/raylib/.github
+/extern/raylib/parser
