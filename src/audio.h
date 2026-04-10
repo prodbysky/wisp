@@ -33,5 +33,5 @@ float audio_get_current_track_progress(const Audio* a);
 
 const char* audio_get_current_track_title(const Audio* a);
 
-void audio_skip_track(Audio* a);
+void audio_skip_track_forward(Audio* a);
 

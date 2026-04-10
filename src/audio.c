@@ -85,7 +85,7 @@ void audio_try_seeking_by(Audio* a, float diff) {
     }
 }
 
-void audio_skip_track(Audio* a) {
+void audio_skip_track_forward(Audio* a) {
     Track* next = queue_advance(&a->queue);
     if (next == NULL) {
         audio_stop_playback(a);
