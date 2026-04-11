@@ -130,7 +130,7 @@ Library prepare_library(const char* root_path) {
                     uint32_t track_num_len = comment->length - 12;
                     const char* track_num_begin = entry + 12;
                     track.number = 0;
-                    for (int i = 0; i < track_num_len; i++) {
+                    for (size_t i = 0; i < track_num_len; i++) {
                         track.number = track.number * 10 + (track_num_begin[i] - '0');
                     } 
                 } else {
@@ -184,9 +184,7 @@ Library prepare_library(const char* root_path) {
     // throw away some not needed album covers that are duplicate
     for (size_t i = 0; i < lib.albums.count; i++) {
         uint8_t* first_cover = lib.albums.items[i].tracks.items[0]->cover;
-        uint32_t first_cover_w = lib.albums.items[i].tracks.items[0]->cover_w;
-        uint32_t first_cover_h = lib.albums.items[i].tracks.items[0]->cover_h;
-        for (int j = 1; j < lib.albums.items[i].tracks.count; j++) {
+        for (size_t j = 1; j < lib.albums.items[i].tracks.count; j++) {
             free(lib.albums.items[i].tracks.items[j]->cover);
             lib.albums.items[i].tracks.items[j]->cover = first_cover;
         }
@@ -215,8 +213,8 @@ static void collect_dir(const char* dir_name, Paths* paths) {
     }
     struct dirent* entry = NULL;
     while ((entry = readdir(dir)) != NULL) {
-        char path[256] = {0};
-        snprintf(path, 256, "%s/%s", dir_name, entry->d_name);
+        char path[257] = {0};
+        snprintf(path, 257, "%s/%s", dir_name, entry->d_name);
         if (*entry->d_name == '.') continue;
         if (entry->d_type == 4) {
             collect_dir(path, paths);
