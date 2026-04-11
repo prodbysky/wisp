@@ -1,6 +1,5 @@
 #include "audio.h"
 
-
 static void queue_push(Queue* q, Track* track);
 static void queue_remove(Queue* q, size_t n);
 static Track* queue_advance(Queue* q);
