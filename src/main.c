@@ -1,5 +1,6 @@
 #include "audio.h"
 #include "library.h"
+#include <math.h>
 
 #define BG_COLOR GetColor(0x181818ff)
 
@@ -9,6 +10,10 @@ typedef struct {
     Texture2D* covers;
     size_t selected_album;
     size_t selected_track;
+
+    float actual_album_offset;
+    float wanted_album_offset;
+
     Audio audio;
 } Wisp;
 
@@ -35,12 +40,40 @@ int main(void) {
     return 0;
 }
 
-void wisp_draw(const Wisp* w) {
+const float ALBUM_COVER_SIDE_LENGTH = 128;
 
+// TODO: Shift colors with the selected albums cover color
+void wisp_draw(const Wisp* w) {
+    const float window_w = GetScreenWidth();
+    const float window_h = GetScreenHeight();
     BeginDrawing();
     ClearBackground(BG_COLOR);
+    Rectangle side_bar = {
+        .width = window_w,
+        .height = ALBUM_COVER_SIDE_LENGTH,
+    };
+
+    for (int i = 0; i < w->library.albums.count; i++) {
+        const Rectangle cover_rect_dest = {
+            .width = ALBUM_COVER_SIDE_LENGTH,
+            .height = ALBUM_COVER_SIDE_LENGTH,
+            .x = i * ALBUM_COVER_SIDE_LENGTH + w->actual_album_offset,
+        };
+        const Rectangle cover_rect_src = {
+            .width = w->covers[i].width,
+            .height = w->covers[i].height,
+        };
+        DrawTexturePro(w->covers[i], cover_rect_src, cover_rect_dest, (Vector2){}, 0.0, WHITE);
+        if (i != w->selected_album) {
+            DrawRectangleRec(cover_rect_dest, GetColor(0x000000aa));
+        }
+    }
+
+
     EndDrawing();
 }
+
+static float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 
 void wisp_update(Wisp* wisp) {
     // todo: if (ctrl && IsKeyPressed(KEY_Q)) w->show_queue = !w->show_queue;
@@ -49,28 +82,33 @@ void wisp_update(Wisp* wisp) {
     const float delta = GetFrameTime();
     const bool  ctrl  = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     const bool  shift = IsKeyDown(KEY_LEFT_SHIFT)   || IsKeyDown(KEY_RIGHT_SHIFT);
+    const float ww    = GetScreenWidth();
 
     // audio related shit
-        { 
-        if (IsKeyPressed(KEY_SPACE)) {
-            audio_toggle_playing_state(&wisp->audio);
-        }
+    { 
+        if (IsKeyPressed(KEY_SPACE)) audio_toggle_playing_state(&wisp->audio);
 
         if (IsKeyPressed(KEY_PERIOD) && shift) audio_skip_track_forward(&wisp->audio);
         // todo: prev track with SHIFT-comma?
         
-        float seek = 0.0f;
         if (IsKeyPressed(KEY_RIGHT)) audio_try_seeking_by(&wisp->audio, 5.0);
         if (IsKeyPressed(KEY_LEFT)) audio_try_seeking_by(&wisp->audio, -5.0);
         audio_update(&wisp->audio);
     } 
     // album selection top or side bar still dont know?
     {
+        const Rectangle last_album_rect = {
+            .x = wisp->library.albums.count * ALBUM_COVER_SIDE_LENGTH - wisp->wanted_album_offset,
+            .width = ALBUM_COVER_SIDE_LENGTH,
+            .height = ALBUM_COVER_SIDE_LENGTH
+        };
         if (IsKeyPressed(KEY_L) && wisp->selected_album < wisp->library.albums.count - 1) {
+            wisp->wanted_album_offset -= ALBUM_COVER_SIDE_LENGTH;
             wisp->selected_album++;
         }
 
         if (IsKeyPressed(KEY_H) && wisp->selected_album != 0) {
+            wisp->wanted_album_offset += ALBUM_COVER_SIDE_LENGTH;
             wisp->selected_album--;
         }
     }
@@ -79,21 +117,13 @@ void wisp_update(Wisp* wisp) {
     {
         Album* selected_album = &wisp->library.albums.items[wisp->selected_album];
         size_t album_track_count = selected_album->tracks.count;
-        if (IsKeyPressed(KEY_J) && wisp->selected_track < album_track_count - 1) {
-            wisp->selected_track++;
-        }
-        if (IsKeyPressed(KEY_K) && wisp->selected_track != 0) {
-            wisp->selected_track--;
-        }
+        if (IsKeyPressed(KEY_J) && wisp->selected_track < album_track_count - 1) wisp->selected_track++;
+        if (IsKeyPressed(KEY_K) && wisp->selected_track != 0) wisp->selected_track--;
 
-        if (IsKeyPressed(KEY_ENTER)) {
-            audio_start_playback(&wisp->audio, selected_album->tracks.items[wisp->selected_track]);
-        }
+        if (IsKeyPressed(KEY_ENTER)) audio_start_playback(&wisp->audio, selected_album->tracks.items[wisp->selected_track]);
 
         // push currently selected song into the queue
-        if (IsKeyPressed(KEY_Q) && !ctrl && !shift) {
-            audio_enqueue_single(&wisp->audio, selected_album->tracks.items[wisp->selected_track]);
-        }
+        if (IsKeyPressed(KEY_Q) && !ctrl && !shift) audio_enqueue_single(&wisp->audio, selected_album->tracks.items[wisp->selected_track]);
 
         // push songs from the current track to the end from the currently selected album
         if (shift && IsKeyPressed(KEY_Q)) {
@@ -102,8 +132,14 @@ void wisp_update(Wisp* wisp) {
             }
         }
     }
+    const float min_offset = fminf(0.0f, GetScreenWidth() - wisp->library.albums.count * ALBUM_COVER_SIDE_LENGTH);
 
-    
+    if (wisp->wanted_album_offset < min_offset)
+        wisp->wanted_album_offset = min_offset;
+    if (wisp->wanted_album_offset > 0.0)
+        wisp->wanted_album_offset = 0.0;
+
+    wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * 0.1f;
 }
 
 Wisp wisp_init(void) {
