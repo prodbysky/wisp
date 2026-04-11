@@ -16,6 +16,7 @@ typedef struct {
     uint32_t color_ebo;
 
     uint32_t shader;
+    int proj_loc;
 } SimpRender;
 
 typedef struct {
@@ -32,10 +33,13 @@ const char *vertex_shader_source =
 "#version 460 core\n"
 "layout (location = 0) in vec2 aPos;\n"
 "layout (location = 1) in vec4 aColor;\n"
+
+"uniform mat4 uProj;\n"
+
 "out vec4 oColor;\n"
 "void main()\n"
 "{\n"
-"   gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
+"   gl_Position = uProj * vec4(aPos, 0.0, 1.0);\n"
 "   oColor = aColor;\n"
 "}\0";
 
@@ -53,8 +57,7 @@ void make_ortho(float matrix[16], float window_w, float window_h);
 
 SimpRender simp_init();
 void simp_rectangle(SimpRender* render, SimpRectangle rect, SimpColor color);
-void simp_flush(SimpRender* render);
-
+void simp_flush(SimpRender* render, float w, float h);
 
 int main() {
     {
@@ -65,6 +68,8 @@ int main() {
     }
 
     RGFW_window* win = RGFW_createWindow("hello!", 0, 0, 800, 600, RGFW_windowOpenGL | RGFW_windowFocusOnShow);
+    int win_w = 800, win_h = 600;
+
     RGFW_window_makeCurrentContext_OpenGL(win);
 
     if (!gladLoadGLLoader((GLADloadproc)RGFW_getProcAddress_OpenGL)) {
@@ -79,18 +84,22 @@ int main() {
     while (!RGFW_window_shouldClose(win)) {
         RGFW_event event;
         while (RGFW_checkEvent(&event)) {
-            if (event.type == RGFW_windowResized) glViewport(0, 0, event.update.w, event.update.h);
+            if (event.type == RGFW_windowResized) {
+                win_w = event.update.w;
+                win_h = event.update.h;
+                glViewport(0, 0, event.update.w, event.update.h);
+            }
             if (event.type == RGFW_windowClose) break;
         }
         simp_rectangle(&render, (SimpRectangle) {
-            .x = -0.5,
-            .y = 0.5,
-            .w = 1,
-            .h = 1,
+            .x = 0,
+            .y = 0,
+            .w = 100,
+            .h = 100,
         }, SIMP_COLOR_RED);
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        simp_flush(&render);
+        simp_flush(&render, win_w, win_h);
         RGFW_window_swapBuffers_OpenGL(win);
     }
 
@@ -124,6 +133,17 @@ SimpRender simp_init() {
     glGenBuffers(1, &rendr.color_vbo);
     glGenBuffers(1, &rendr.color_ebo);
 
+    glBindVertexArray(rendr.color_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, rendr.color_vbo);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0); // pos
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float))); // color
+    glEnableVertexAttribArray(1);
+
+    glBindVertexArray(0);
+
     uint32_t vertex_shader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertex_shader, 1, &vertex_shader_source, NULL);
     glCompileShader(vertex_shader);
@@ -140,21 +160,21 @@ SimpRender simp_init() {
     glDeleteShader(vertex_shader);
     glDeleteShader(frag_shader);
 
+    rendr.proj_loc = glGetUniformLocation(rendr.shader, "uProj");
+
     return rendr;
 }
 
 void simp_rectangle(SimpRender* render, SimpRectangle rect, SimpColor color) {
     float verts[] = {
-        // x, y, r, g, b, a
-        
         // top right
         rect.x + rect.w, rect.y,           color.r, color.g, color.b, color.a,
 
         // bottom right
-        rect.x + rect.w, rect.y - rect.h,  color.r, color.g, color.b, color.a,
+        rect.x + rect.w, rect.y + rect.h,  color.r, color.g, color.b, color.a,
 
         // bottom left
-        rect.x, rect.y - rect.h,           color.r, color.g, color.b, color.a,
+        rect.x, rect.y + rect.h,           color.r, color.g, color.b, color.a,
 
         // top left
         rect.x, rect.y,                    color.r, color.g, color.b, color.a,
@@ -175,18 +195,21 @@ void simp_rectangle(SimpRender* render, SimpRectangle rect, SimpColor color) {
     *yar_append(&render->color_point_indices) = base + 3;
 }
 
-void simp_flush(SimpRender* render) {
+void simp_flush(SimpRender* render, float w, float h) {
     glBindVertexArray(render->color_vao);
     glBindBuffer(GL_ARRAY_BUFFER, render->color_vbo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render->color_ebo);
     glBufferData(GL_ARRAY_BUFFER, render->color_points.count * sizeof(float), render->color_points.items, GL_DYNAMIC_DRAW);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, render->color_point_indices.count * sizeof(uint32_t), render->color_point_indices.items, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0); // position
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float))); // color
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
+
     glUseProgram(render->shader);
+
+    float proj[16];
+    make_ortho(proj, w, h);
+    glUniformMatrix4fv(render->proj_loc, 1, GL_FALSE, proj);
+
     glDrawElements(GL_TRIANGLES, render->color_point_indices.count, GL_UNSIGNED_INT, 0);
+
     glBindVertexArray(0);
     render->color_point_indices.count = 0;
     render->color_points.count = 0;
