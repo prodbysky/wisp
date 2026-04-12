@@ -77,7 +77,8 @@ void simp_clear_background(const SimpRender* r, SimpColor c);
 SimpTexture simp_load_texture(const char* path);
 SimpTexture simp_load_texture_from_memory(
     const uint8_t* bytes,
-    int len);  // NOTE: This is not akin to loading a raw seq. of bytes
+    int len);
+SimpTexture simp_load_texture_from_pixels(const uint8_t* pixels, int w, int h);
 void simp_draw_texture(SimpRender* r, SimpTexture* tex, float x, float y);
 void simp_draw_texture_ex(SimpRender* r,
                           SimpTexture* tex,

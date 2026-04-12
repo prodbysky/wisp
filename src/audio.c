@@ -60,10 +60,13 @@ void audio_start_playback(Audio* a, Track* track) {
         a->sound_initialized = false;
     }
 
-    ma_uint32 flags = MA_SOUND_FLAG_DECODE | MA_SOUND_FLAG_ASYNC;
+    ma_engine_stop(&a->engine);
+
+    ma_uint32 flags = MA_SOUND_FLAG_DECODE;
     ma_result r = ma_sound_init_from_file(&a->engine, track->path, flags, NULL, NULL, &a->sound);
     if (r != MA_SUCCESS) {
         fprintf(stderr, "audio_start_playback: failed to load '%s' (%d)\n", track->path, r);
+        ma_engine_start(&a->engine);
         return;
     }
 
@@ -72,9 +75,9 @@ void audio_start_playback(Audio* a, Track* track) {
     a->current_track     = track;
     a->playing           = true;
 
+    ma_engine_start(&a->engine);
     ma_sound_start(&a->sound);
 }
-
 bool audio_queue_is_empty(const Audio* a) {
     return a->queue.tracks.count == 0;
 }

@@ -1,16 +1,9 @@
 #include <assert.h>
 #include <math.h>
-#define RGFW_IMPLEMENTATION
-#define RGFW_OPENGL
 #include "../extern/rgfw.h"
 #include "simp.h"
-#undef RGFW_IMPLEMENTATION
-#undef RGFW_OPENGL
-#include "simp.h"
-
 #include "audio.h"
 #include "library.h"
-
 #include "../extern/yar.h"
 
 #define BG_COLOR           (SimpColor){.r = 0x18/255.0, .g = 0x18/255.0, .b = 0x18/255.0, .a = 1 }
@@ -40,22 +33,25 @@ typedef struct {
     Audio audio;
 } Wisp;
 
-Wisp wisp_init(void);
+void wisp_init(Wisp* w);
 void wisp_update(Wisp* w);
 void wisp_draw(Wisp* w);
 
 int main(void) {
-    Wisp ws = wisp_init();
+    Wisp* ws = malloc(sizeof(Wisp));
+    wisp_init(ws);
 
-    while (!simp_should_close(&ws.renderer)) {
-        wisp_update(&ws);
-        wisp_draw(&ws);
+    while (!simp_should_close(&ws->renderer)) {
+        RGFW_pollEvents();
+        wisp_update(ws);
+        wisp_draw(ws);
     }
 
-    audio_stop_playback(&ws.audio);
-    audio_deinit(&ws.audio);
-    unload_library(&ws.library);
-    free(ws.covers);
+    audio_stop_playback(&ws->audio);
+    audio_deinit(&ws->audio);
+    unload_library(&ws->library);
+    free(ws->covers);
+    free(ws);
     return 0;
 }
 
@@ -222,28 +218,19 @@ void wisp_update(Wisp* wisp) {
     }
 }
 
-Wisp wisp_init(void) {
-    Library lib = prepare_library("/home/shr/Downloads/Nicotine");
+void wisp_init(Wisp* w) {
+    memset(w, 0, sizeof(*w));
 
-    SimpRender renderer = simp_init("wispy", 1280, 720);
+    w->library  = prepare_library("/home/shr/Downloads/Nicotine");
+    w->renderer = simp_init("wispy", 1280, 720);
+    w->font     = simp_font_load("res/Iosevka.ttf", 24);
 
-    SimpFont font = simp_font_load("res/Iosevka.ttf", 24);
-
-    SimpTexture* textures = malloc(lib.albums.count * sizeof(SimpTexture));
-    for (size_t i = 0; i < lib.albums.count; i++) {
-        Track* t = lib.albums.items[i].tracks.items[0];
-        textures[i] = simp_load_texture_from_memory(t->cover, 3 * t->cover_w * t->cover_h);
-        free(lib.albums.items[i].tracks.items[0]->cover);
+    w->covers = malloc(w->library.albums.count * sizeof(SimpTexture));
+    for (size_t i = 0; i < w->library.albums.count; i++) {
+        Track* t = w->library.albums.items[i].tracks.items[0];
+        w->covers[i] = simp_load_texture_from_pixels(t->cover, t->cover_w, t->cover_h);
+        free(t->cover);
     }
 
-    Audio audio = {0};
-    audio_init(&audio);
-
-    return (Wisp){
-        .renderer = renderer,
-        .font     = font,
-        .library  = lib,
-        .covers   = textures,
-        .audio    = audio,
-    };
+    audio_init(&w->audio);
 }

@@ -217,6 +217,8 @@ void simp_text(SimpRender* r,
 }
 
 void simp_flush(SimpRender* r) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glViewport(0, 0, r->window->w, r->window->h);
     float proj[16];
     make_ortho(proj, r->window->w, r->window->h);
@@ -270,8 +272,6 @@ void simp_flush(SimpRender* r) {
 
     r->text_batches.count = 0;
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glBindVertexArray(r->tex_vao);
     glUseProgram(r->tex_shader);
@@ -300,7 +300,7 @@ void simp_flush(SimpRender* r) {
     }
     r->tex_batches.count = 0;
 
-    glDisable(GL_BLEND);
+    RGFW_window_swapBuffers_OpenGL(r->window);
 }
 
 SimpFont simp_font_load(const char* path, float pixel_height) {
@@ -387,6 +387,23 @@ SimpTexture simp_load_texture_from_memory(const uint8_t* bytes, int len) {
 
     glBindTexture(GL_TEXTURE_2D, 0);
     stbi_image_free(data);
+    return t;
+}
+SimpTexture simp_load_texture_from_pixels(const uint8_t* pixels, int w, int h) {
+    SimpTexture t = { .w = w, .h = h };
+
+    glGenTextures(1, &t.texture);
+    glBindTexture(GL_TEXTURE_2D, t.texture);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB,
+                 GL_UNSIGNED_BYTE, pixels);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
     return t;
 }
 
