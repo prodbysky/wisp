@@ -2,8 +2,6 @@
 #include "library.h"
 #include <assert.h>
 #include <math.h>
-#define YAR_IMPLEMENTATION
-#include "../extern/yar.h"
 
 #define BG_COLOR GetColor(0x181818ff)
 
