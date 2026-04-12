@@ -1,10 +1,12 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+
 #define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
-#include "../extern/rgfw.h"
 #include "../extern/glad/include/glad/glad.h"
-#include <time.h>
+#include "../extern/rgfw.h"
 
 #define YAR_IMPLEMENTATION
 #include "../extern/yar.h"
@@ -12,33 +14,7 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "../extern/stb_truetype.h"
 
-typedef struct {
-    RGFW_window* window;
-
-    yar(float) color_points;
-    yar(uint32_t) color_point_indices;
-
-    uint32_t color_vao;
-    uint32_t color_vbo;
-    uint32_t color_ebo;
-
-    uint32_t shader;
-    int proj_loc;
-
-    yar(float) text_points;
-    yar(uint32_t) text_indices;
-
-    uint32_t text_vao;
-    uint32_t text_vbo;
-    uint32_t text_ebo;
-
-    uint32_t font_texture;
-
-    uint32_t text_shader;
-    int text_proj_loc;
-
-
-} SimpRender;
+#include <time.h>
 
 typedef struct {
     float x, y, w, h;
@@ -49,318 +25,247 @@ typedef struct {
 } SimpColor;
 
 #define SIMP_COLOR_RED (SimpColor){1, 0, 0, 1}
-#define SIMP_COLOR_GRUBER_BG (SimpColor){0x18/255.0, 0x18/255.0, 0x18/255.0, 1}
+#define SIMP_COLOR_BG (SimpColor){0.1, 0.1, 0.1, 1}
 
-const char *vertex_shader_source = 
-"#version 460 core\n"
-"layout (location = 0) in vec2 aPos;\n"
-"layout (location = 1) in vec4 aColor;\n"
+typedef struct {
+    uint32_t texture;
+    stbtt_bakedchar cdata[96];
+    int tex_w, tex_h;
+} SimpFont;
 
-"uniform mat4 uProj;\n"
+SimpFont simp_font_load(const char* path, float pixel_height) {
+    SimpFont font = {0};
 
-"out vec4 oColor;\n"
-"void main()\n"
-"{\n"
-"   gl_Position = uProj * vec4(aPos, 0.0, 1.0);\n"
-"   oColor = aColor;\n"
-"}\0";
+    FILE* f = fopen(path, "rb");
+    assert(f);
 
-const char *fragment_shader_source = 
-"#version 460 core\n"
-"out vec4 FragColor;\n"
-"in vec4 oColor;\n"
-"void main()\n"
-"{\n"
-"    FragColor = oColor;\n"
-"}\0";
+    fseek(f, 0, SEEK_END);
+    size_t size = ftell(f);
+    fseek(f, 0, SEEK_SET);
 
-const char* text_vertex_shader =
-"#version 460 core\n"
-"layout (location = 0) in vec2 aPos;\n"
-"layout (location = 1) in vec4 aColor;\n"
-"layout (location = 2) in vec2 aUV;\n"
+    uint8_t* buffer = malloc(size);
+    fread(buffer, 1, size, f);
+    fclose(f);
 
-"uniform mat4 uProj;\n"
+    font.tex_w = 512;
+    font.tex_h = 512;
 
-"out vec4 oColor;\n"
-"out vec2 oUV;\n"
+    unsigned char* bitmap = calloc(font.tex_w * font.tex_h, 1);
 
-"void main()\n"
-"{\n"
-"   gl_Position = uProj * vec4(aPos, 0.0, 1.0);\n"
-"   oColor = aColor;\n"
-"   oUV = aUV;\n"
-"}\0";
+    stbtt_BakeFontBitmap(buffer, 0, pixel_height, bitmap, font.tex_w,
+                         font.tex_h, 32, 96, font.cdata);
 
-const char* text_frag_shader =
-"#version 460 core\n"
+    free(buffer);
 
-"in vec4 oColor;\n"
-"in vec2 oUV;\n"
-"out vec4 FragColor;\n"
+    glGenTextures(1, &font.texture);
+    glBindTexture(GL_TEXTURE_2D, font.texture);
 
-"uniform sampler2D uFontAtlasTexture;\n"
-"void main()\n"
-"{\n"
-"   FragColor = vec4(texture(uFontAtlasTexture, oUV).r) * oColor;\n"
-"}\0";
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, font.tex_w, font.tex_h, 0, GL_RED,
+                 GL_UNSIGNED_BYTE, bitmap);
 
-void make_ortho(float matrix[16], float window_w, float window_h);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+    glBindTexture(GL_TEXTURE_2D, 0);
 
-SimpRender simp_init();
-void simp_clear_background(SimpRender* render, SimpColor color);
-void simp_rectangle(SimpRender* render, SimpRectangle rect, SimpColor color);
-void simp_text(SimpRender* r, const char* text, float x, float y, SimpColor color);
-void simp_flush(SimpRender* render, float w, float h);
+    free(bitmap);
 
-double get_time();
-
-unsigned char temp_bitmap[512*512];
-stbtt_bakedchar cdata[96];
-
-int main() {
-
-    {
-        RGFW_glHints* hints = RGFW_getGlobalHints_OpenGL();
-        hints->major = 4;
-        hints->minor = 6;
-        RGFW_setGlobalHints_OpenGL(hints);
-    }
-
-    RGFW_window* win = RGFW_createWindow("hello!", 0, 0, 800, 600, RGFW_windowOpenGL | RGFW_windowFocusOnShow);
-    int win_w = 800, win_h = 600;
-
-    RGFW_window_makeCurrentContext_OpenGL(win);
-
-    if (!gladLoadGLLoader((GLADloadproc)RGFW_getProcAddress_OpenGL)) {
-        printf("Failed to initialize GLAD\n");
-        return -1;
-    }    
-    SimpRender render = simp_init();
-
-    uint32_t texture_id;
-    { // font setup
-        FILE* f = fopen("res/Iosevka.ttf", "rb");
-        assert(f);
-        fseek(f, 0, SEEK_END);
-        size_t len = ftell(f);
-        fseek(f, 0, SEEK_SET);
-
-        uint8_t* buffer = malloc(len);
-        fread(buffer, 1, len, f);
-        fclose(f);
-
-        stbtt_BakeFontBitmap(buffer,0, 64.0, temp_bitmap,512,512, 32,96, cdata);
-        glGenTextures(1, &texture_id);
-        glBindTexture(GL_TEXTURE_2D, texture_id);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 512, 512, 0, GL_RED, GL_UNSIGNED_BYTE, temp_bitmap);        
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
-    render.font_texture = texture_id;
-
-    glViewport(0, 0, 800, 600);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-
-    double last_time = get_time();
-    while (!RGFW_window_shouldClose(win)) {
-        double curr = get_time();
-        double dt = curr - last_time;
-        last_time = curr;
-
-        RGFW_event event;
-        while (RGFW_checkEvent(&event)) {
-            if (event.type == RGFW_windowResized) {
-                win_w = event.update.w;
-                win_h = event.update.h;
-                glViewport(0, 0, event.update.w, event.update.h);
-            }
-            if (event.type == RGFW_windowClose) break;
-        }
-        simp_clear_background(&render, SIMP_COLOR_GRUBER_BG);
-
-        simp_rectangle(&render, (SimpRectangle) {
-            .x = 0,
-            .y = 0,
-            .w = 100,
-            .h = 100,
-        }, SIMP_COLOR_RED);
-        simp_text(&render, "Hello world!", 200, 200, SIMP_COLOR_RED);
-
-        simp_flush(&render, win_w, win_h);
-        RGFW_window_swapBuffers_OpenGL(win);
-    }
-
-    RGFW_window_close(win);
+    return font;
 }
 
-void make_ortho(float matrix[16], float window_w, float window_h) {
-    float left   = 0.0f;
-    float right  = window_w;
-    float bottom = window_h;
-    float top    = 0.0f;
-    float near   = -1.0f;
-    float far    = 1.0f;
+typedef struct {
+    uint32_t texture;
+    yar(float) points;
+    yar(uint32_t) indices;
+} SimpTextBatch;
 
+typedef struct {
+    yar(float) color_points;
+    yar(uint32_t) color_indices;
+
+    yar(SimpTextBatch) text_batches;
+
+    uint32_t color_vao, color_vbo, color_ebo;
+    uint32_t text_vao, text_vbo, text_ebo;
+
+    uint32_t shader;
+    uint32_t text_shader;
+
+    int proj_loc;
+    int text_proj_loc;
+
+} SimpRender;
+
+const char* vs =
+    "#version 460 core\n"
+    "layout (location=0) in vec2 aPos;"
+    "layout (location=1) in vec4 aColor;"
+    "uniform mat4 uProj;"
+    "out vec4 c;"
+    "void main(){ gl_Position=uProj*vec4(aPos,0,1); c=aColor;}";
+
+const char* fs =
+    "#version 460 core\n"
+    "in vec4 c; out vec4 Frag;"
+    "void main(){ Frag=c;}";
+
+const char* tvs =
+    "#version 460 core\n"
+    "layout (location=0) in vec2 aPos;"
+    "layout (location=1) in vec4 aColor;"
+    "layout (location=2) in vec2 aUV;"
+    "uniform mat4 uProj;"
+    "out vec4 c; out vec2 uv;"
+    "void main(){ gl_Position=uProj*vec4(aPos,0,1); c=aColor; uv=aUV;}";
+
+const char* tfs =
+    "#version 460 core\n"
+    "in vec4 c; in vec2 uv; out vec4 Frag;"
+    "uniform sampler2D tex;"
+    "void main(){ Frag = vec4(texture(tex,uv).r)*c;}";
+
+static uint32_t make_shader(const char* vs_src, const char* fs_src) {
+    uint32_t vs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vs, 1, &vs_src, NULL);
+    glCompileShader(vs);
+
+    uint32_t fs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fs, 1, &fs_src, NULL);
+    glCompileShader(fs);
+
+    uint32_t prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    return prog;
+}
+
+static void make_ortho(float m[16], float w, float h) {
     for (int i = 0; i < 16; i++)
-        matrix[i] = 0.0f;
+        m[i] = 0.0f;
 
-    matrix[0]  =  2.0f / (right - left);
-    matrix[5]  =  2.0f / (top - bottom);
-    matrix[10] = -2.0f / (far - near);
+    m[0] = 2.0f / w;
+    m[5] = -2.0f / h;
+    m[10] = -1.0f;
 
-    matrix[12] = -(right + left) / (right - left);
-    matrix[13] = -(top + bottom) / (top - bottom);
-    matrix[14] = -(far + near) / (far - near);
-    matrix[15] = 1.0f;
+    m[12] = -1.0f;
+    m[13] = 1.0f;
+    m[15] = 1.0f;
+}
+static SimpTextBatch* get_batch(SimpRender* r, uint32_t texture) {
+    for (size_t i = 0; i < r->text_batches.count; i++) {
+        if (r->text_batches.items[i].texture == texture)
+            return &r->text_batches.items[i];
+    }
+
+    SimpTextBatch batch = {0};
+    batch.texture = texture;
+
+    *yar_append(&r->text_batches) = batch;
+    return &r->text_batches.items[r->text_batches.count - 1];
 }
 
 SimpRender simp_init() {
-    SimpRender rendr = {0};
-    glGenVertexArrays(1, &rendr.color_vao);
-    glGenBuffers(1, &rendr.color_vbo);
-    glGenBuffers(1, &rendr.color_ebo);
+    SimpRender r = {0};
 
-    glBindVertexArray(rendr.color_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, rendr.color_vbo);
+    glGenVertexArrays(1, &r.color_vao);
+    glGenBuffers(1, &r.color_vbo);
+    glGenBuffers(1, &r.color_ebo);
 
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0); // pos
+    glBindVertexArray(r.color_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, r.color_vbo);
+    glVertexAttribPointer(0, 2, GL_FLOAT, 0, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float))); // color
+    glVertexAttribPointer(1, 4, GL_FLOAT, 0, 6 * sizeof(float),
+                          (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    glBindVertexArray(0);
+    glGenVertexArrays(1, &r.text_vao);
+    glGenBuffers(1, &r.text_vbo);
+    glGenBuffers(1, &r.text_ebo);
 
-    glGenVertexArrays(1, &rendr.text_vao);
-    glGenBuffers(1, &rendr.text_vbo);
-    glGenBuffers(1, &rendr.text_ebo);
-
-    glBindVertexArray(rendr.text_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, rendr.text_vbo);
-
-    // pos (vec2)
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glBindVertexArray(r.text_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, r.text_vbo);
+    glVertexAttribPointer(0, 2, GL_FLOAT, 0, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-
-    // color (vec4)
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(2 * sizeof(float)));
+    glVertexAttribPointer(1, 4, GL_FLOAT, 0, 8 * sizeof(float),
+                          (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
-
-    // uv (vec2)
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glVertexAttribPointer(2, 2, GL_FLOAT, 0, 8 * sizeof(float),
+                          (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    glBindVertexArray(0);
+    r.shader = make_shader(vs, fs);
+    r.text_shader = make_shader(tvs, tfs);
 
-    uint32_t vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &vertex_shader_source, NULL);
-    glCompileShader(vertex_shader);
+    r.proj_loc = glGetUniformLocation(r.shader, "uProj");
+    r.text_proj_loc = glGetUniformLocation(r.text_shader, "uProj");
 
-    uint32_t frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(frag_shader, 1, &fragment_shader_source, NULL);
-    glCompileShader(frag_shader);
-    
-    rendr.shader = glCreateProgram();
+    glUseProgram(r.text_shader);
+    glUniform1i(glGetUniformLocation(r.text_shader, "tex"), 0);
 
-    
-    glAttachShader(rendr.shader, vertex_shader);
-    glAttachShader(rendr.shader, frag_shader);
-    glLinkProgram(rendr.shader);
-    glDeleteShader(vertex_shader);
-    glDeleteShader(frag_shader);
-
-    vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &text_vertex_shader, NULL);
-    glCompileShader(vertex_shader);
-
-    frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(frag_shader, 1, &text_frag_shader, NULL);
-    glCompileShader(frag_shader);
-    
-    rendr.text_shader = glCreateProgram();
-
-    
-    glAttachShader(rendr.text_shader, vertex_shader);
-    glAttachShader(rendr.text_shader, frag_shader);
-    glLinkProgram(rendr.text_shader);
-    glDeleteShader(vertex_shader);
-    glDeleteShader(frag_shader);
-
-    rendr.text_proj_loc = glGetUniformLocation(rendr.text_shader, "uProj");
-
-    return rendr;
+    return r;
 }
 
-void simp_rectangle(SimpRender* render, SimpRectangle rect, SimpColor color) {
-    float verts[] = {
-        // top right
-        rect.x + rect.w, rect.y,           color.r, color.g, color.b, color.a,
-
-        // bottom right
-        rect.x + rect.w, rect.y + rect.h,  color.r, color.g, color.b, color.a,
-
-        // bottom left
-        rect.x, rect.y + rect.h,           color.r, color.g, color.b, color.a,
-
-        // top left
-        rect.x, rect.y,                    color.r, color.g, color.b, color.a,
+void simp_rectangle(SimpRender* r, SimpRectangle rect, SimpColor c) {
+    float v[] = {
+        rect.x,          rect.y,          c.r, c.g, c.b, c.a,
+        rect.x + rect.w, rect.y,          c.r, c.g, c.b, c.a,
+        rect.x + rect.w, rect.y + rect.h, c.r, c.g, c.b, c.a,
+        rect.x,          rect.y + rect.h, c.r, c.g, c.b, c.a,
     };
 
-    for (int i = 0; i < 24; i++) {
-        *yar_append(&render->color_points) = verts[i];
-    }
+    for (int i = 0; i < 24; i++)
+        *yar_append(&r->color_points) = v[i];
 
-    uint32_t base = (render->color_points.count / 6) - 4;
+    uint32_t b = (r->color_points.count / 6) - 4;
 
-    *yar_append(&render->color_point_indices) = base + 0;
-    *yar_append(&render->color_point_indices) = base + 1;
-    *yar_append(&render->color_point_indices) = base + 3;
-
-    *yar_append(&render->color_point_indices) = base + 1;
-    *yar_append(&render->color_point_indices) = base + 2;
-    *yar_append(&render->color_point_indices) = base + 3;
+    uint32_t inds[] = {b, b + 1, b + 2, b, b + 2, b + 3};
+    for (int i = 0; i < 6; i++)
+        *yar_append(&r->color_indices) = inds[i];
 }
 
-void simp_text(SimpRender* r, const char* text, float x, float y, SimpColor color) {
+void simp_text(SimpRender* r,
+               SimpFont* font,
+               const char* text,
+               float x,
+               float y,
+               SimpColor c) {
+    SimpTextBatch* batch = get_batch(r, font->texture);
 
     while (*text) {
         if (*text >= 32 && *text < 127) {
-            stbtt_bakedchar* b = &cdata[*text - 32];
+            stbtt_bakedchar* b = &font->cdata[*text - 32];
 
-            float x0 = x + b->xoff;
-            float y0 = y + b->yoff;
+            float x0 = x + b->xoff, y0 = y + b->yoff;
             float x1 = x0 + (b->x1 - b->x0);
             float y1 = y0 + (b->y1 - b->y0);
 
-            float u0 = b->x0 / 512.0f;
-            float v0 = b->y0 / 512.0f;
-            float u1 = b->x1 / 512.0f;
-            float v1 = b->y1 / 512.0f;
+            float u0 = b->x0 / (float)font->tex_w;
+            float v0 = b->y0 / (float)font->tex_h;
+            float u1 = b->x1 / (float)font->tex_w;
+            float v1 = b->y1 / (float)font->tex_h;
 
-            float verts[] = {
-                x0, y0, color.r, color.g, color.b, color.a, u0, v0,
-                x1, y0, color.r, color.g, color.b, color.a, u1, v0,
-                x1, y1, color.r, color.g, color.b, color.a, u1, v1,
-                x0, y1, color.r, color.g, color.b, color.a, u0, v1,
+            float vtx[] = {
+                x0,  y0,  c.r, c.g, c.b, c.a, u0,  v0,  x1,  y0,  c.r,
+                c.g, c.b, c.a, u1,  v0,  x1,  y1,  c.r, c.g, c.b, c.a,
+                u1,  v1,  x0,  y1,  c.r, c.g, c.b, c.a, u0,  v1,
             };
 
-            for (int i = 0; i < 32; i++) {
-                *yar_append(&r->text_points) = verts[i];
-            }
+            for (int i = 0; i < 32; i++)
+                *yar_append(&batch->points) = vtx[i];
 
-            uint32_t base = (r->text_points.count / 8) - 4;
+            uint32_t base = (batch->points.count / 8) - 4;
 
-            *yar_append(&r->text_indices) = base + 0;
-            *yar_append(&r->text_indices) = base + 1;
-            *yar_append(&r->text_indices) = base + 2;
+            uint32_t inds[] = {base, base + 1, base + 2,
+                               base, base + 2, base + 3};
 
-            *yar_append(&r->text_indices) = base + 0;
-            *yar_append(&r->text_indices) = base + 2;
-            *yar_append(&r->text_indices) = base + 3;
+            for (int i = 0; i < 6; i++)
+                *yar_append(&batch->indices) = inds[i];
 
             x += b->xadvance;
         }
@@ -368,65 +273,90 @@ void simp_text(SimpRender* r, const char* text, float x, float y, SimpColor colo
     }
 }
 
-void simp_clear_background(SimpRender* render, SimpColor color) {
-    (void)render;
-    glClearColor(color.r, color.g, color.b, color.a);
-    glClear(GL_COLOR_BUFFER_BIT);
-}
-
-void simp_flush(SimpRender* render, float w, float h) {
-    glBindVertexArray(render->color_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, render->color_vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render->color_ebo);
-    glBufferData(GL_ARRAY_BUFFER, render->color_points.count * sizeof(float), render->color_points.items, GL_DYNAMIC_DRAW);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, render->color_point_indices.count * sizeof(uint32_t), render->color_point_indices.items, GL_DYNAMIC_DRAW);
-
-    glUseProgram(render->shader);
-
+void simp_flush(SimpRender* r, float w, float h) {
+    glViewport(0, 0, w, h);
     float proj[16];
     make_ortho(proj, w, h);
-    glUniformMatrix4fv(render->proj_loc, 1, GL_FALSE, proj);
 
-    glDrawElements(GL_TRIANGLES, render->color_point_indices.count, GL_UNSIGNED_INT, 0);
+    // rectangles
+    glBindVertexArray(r->color_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, r->color_vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->color_ebo);
 
-    glBindVertexArray(0);
-    render->color_point_indices.count = 0;
-    render->color_points.count = 0;
-
-    glBindVertexArray(render->text_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, render->text_vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, render->text_ebo);
-
-    glBufferData(GL_ARRAY_BUFFER,
-        render->text_points.count * sizeof(float),
-        render->text_points.items,
-        GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, r->color_points.count * sizeof(float),
+                 r->color_points.items, GL_DYNAMIC_DRAW);
 
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-        render->text_indices.count * sizeof(uint32_t),
-        render->text_indices.items,
-        GL_DYNAMIC_DRAW);
+                 r->color_indices.count * sizeof(uint32_t),
+                 r->color_indices.items, GL_DYNAMIC_DRAW);
 
-    glUseProgram(render->text_shader);
+    glUseProgram(r->shader);
+    glUniformMatrix4fv(r->proj_loc, 1, 0, proj);
 
-    glUniformMatrix4fv(render->text_proj_loc, 1, GL_FALSE, proj);
+    glDrawElements(GL_TRIANGLES, r->color_indices.count, GL_UNSIGNED_INT, 0);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, render->font_texture);
+    r->color_points.count = 0;
+    r->color_indices.count = 0;
 
-    glDrawElements(GL_TRIANGLES,
-        render->text_indices.count,
-        GL_UNSIGNED_INT,
-        0);
+    // text batches
+    glBindVertexArray(r->text_vao);
+    glUseProgram(r->text_shader);
+    glUniformMatrix4fv(r->text_proj_loc, 1, 0, proj);
 
-    glBindVertexArray(0);
+    for (size_t i = 0; i < r->text_batches.count; i++) {
+        SimpTextBatch* b = &r->text_batches.items[i];
 
-    render->text_points.count = 0;
-    render->text_indices.count = 0;
+        glBindBuffer(GL_ARRAY_BUFFER, r->text_vbo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, r->text_ebo);
+
+        glBufferData(GL_ARRAY_BUFFER, b->points.count * sizeof(float),
+                     b->points.items, GL_DYNAMIC_DRAW);
+
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+                     b->indices.count * sizeof(uint32_t), b->indices.items,
+                     GL_DYNAMIC_DRAW);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, b->texture);
+
+        glDrawElements(GL_TRIANGLES, b->indices.count, GL_UNSIGNED_INT, 0);
+
+        b->points.count = 0;
+        b->indices.count = 0;
+    }
+
+    r->text_batches.count = 0;
 }
 
-double get_time() {
-    struct timespec ts;
-    clock_gettime(TIME_UTC, &ts);
-    return ts.tv_sec + ts.tv_nsec / 1e9;
+int main() {
+    RGFW_window* win =
+        RGFW_createWindow("simp", 0, 0, 800, 600, RGFW_windowOpenGL);
+
+    RGFW_window_makeCurrentContext_OpenGL(win);
+    gladLoadGLLoader((GLADloadproc)RGFW_getProcAddress_OpenGL);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    SimpRender r = simp_init();
+
+    SimpFont font1 = simp_font_load("res/Iosevka.ttf", 64);
+    SimpFont font2 = simp_font_load("res/Iosevka.ttf", 32);
+    while (!RGFW_window_shouldClose(win)) {
+        int w = win->w;
+        int h = win->h;
+
+        glClearColor(0.1, 0.1, 0.1, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        simp_rectangle(&r, (SimpRectangle){0, 0, 200, 100}, SIMP_COLOR_RED);
+
+        simp_text(&r, &font1, "Big text", 000, 100, SIMP_COLOR_RED);
+        simp_text(&r, &font2, "Small text", 100, 200, SIMP_COLOR_RED);
+
+        simp_flush(&r, w, h);
+
+        RGFW_window_swapBuffers_OpenGL(win);
+        RGFW_pollEvents();
+    }
 }
