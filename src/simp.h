@@ -1,8 +1,13 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "../extern/stb_truetype.h"
 #include "../extern/yar.h"
+
+#include "../extern/glad/include/glad/glad.h"
+
+#include "../extern/rgfw.h"
 
 typedef struct {
     float x, y, w, h;
@@ -13,6 +18,8 @@ typedef struct {
 } SimpColor;
 
 #define SIMP_COLOR_RED (SimpColor){1, 0, 0, 1}
+#define SIMP_COLOR_WHITE (SimpColor){1, 1, 1, 1}
+#define SIMP_COLOR_GRAY (SimpColor){0.5, 0.5, 0.5, 1}
 
 typedef struct {
     uint32_t texture;
@@ -38,6 +45,7 @@ typedef struct {
 } SimpTextureBatch;
 
 typedef struct {
+    RGFW_window* window;
     yar(float) color_points;
     yar(uint32_t) color_indices;
 
@@ -58,9 +66,13 @@ typedef struct {
     int tex_proj_loc;
 } SimpRender;
 
-SimpRender simp_init();
+SimpRender simp_init(const char* title, int w, int h);
+bool simp_should_close(SimpRender* render);
+float simp_get_screen_w(const SimpRender* render);
+float simp_get_screen_h(const SimpRender* render);
 
 void simp_rectangle(SimpRender* r, SimpRectangle rect, SimpColor c);
+void simp_clear_background(const SimpRender* r, SimpColor c);
 
 SimpTexture simp_load_texture(const char* path);
 SimpTexture simp_load_texture_from_memory(
@@ -81,4 +93,4 @@ void simp_text(SimpRender* r,
                float y,
                SimpColor c);
 
-void simp_flush(SimpRender* r, float w, float h);
+void simp_flush(SimpRender* r);

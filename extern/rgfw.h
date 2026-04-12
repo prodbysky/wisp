@@ -1,3 +1,5 @@
+#ifndef RG_INCLUDED
+#define RG_INCLUDED
 /*
 *
 *	RGFW 2.0.0-dev
@@ -15904,3 +15906,4 @@ void RGFW_load_Wayland(void) {
 	#pragma warning( pop )
 #endif
 
+#endif

@@ -8,7 +8,6 @@
 #include "../extern/yar.h"
 #include "../extern/stb_image.h"
 
-#include "../extern/raylib/src/raylib.h"
 
 typedef struct {
     char** items;

@@ -1,13 +1,21 @@
-#include "simp.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#define RGFW_IMPLEMENTATION
 #define RGFW_OPENGL
-#include "../extern/glad/include/glad/glad.h"
 #include "../extern/rgfw.h"
+#undef RGFW_IMPLEMENTATION
+#undef RGFW_OPENGL
+#include "simp.h"
+
+#include "../extern/glad/include/glad/glad.h"
 #include "../extern/stb_image.h"
+
+#include "../extern/stb_truetype.h"
+
+
+
 
 static const char* vs =
     "#version 460 core\n"
@@ -57,8 +65,17 @@ static void make_ortho(float m[16], float w, float h);
 static SimpTextBatch* get_batch(SimpRender* r, uint32_t texture);
 static SimpTextureBatch* get_tex_batch(SimpRender* r, uint32_t texture);
 
-SimpRender simp_init() {
+SimpRender simp_init(const char* title, int w, int h) {
     SimpRender r = {0};
+
+    r.window =
+        RGFW_createWindow(title, 0, 0, w, h, RGFW_windowOpenGL);
+
+    RGFW_window_makeCurrentContext_OpenGL(r.window);
+    gladLoadGLLoader((GLADloadproc)RGFW_getProcAddress_OpenGL);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glGenVertexArrays(1, &r.color_vao);
     glGenBuffers(1, &r.color_vbo);
@@ -121,6 +138,17 @@ SimpRender simp_init() {
     return r;
 }
 
+bool simp_should_close(SimpRender* render) {
+    return RGFW_window_shouldClose(render->window);
+}
+
+float simp_get_screen_w(const SimpRender* render) {
+    return render->window->w;
+}
+float simp_get_screen_h(const SimpRender* render) {
+    return render->window->h;
+}
+
 void simp_rectangle(SimpRender* r, SimpRectangle rect, SimpColor c) {
     float v[] = {
         rect.x,          rect.y,          c.r, c.g, c.b, c.a,
@@ -137,6 +165,11 @@ void simp_rectangle(SimpRender* r, SimpRectangle rect, SimpColor c) {
     uint32_t inds[] = {b, b + 1, b + 2, b, b + 2, b + 3};
     for (int i = 0; i < 6; i++)
         *yar_append(&r->color_indices) = inds[i];
+}
+
+void simp_clear_background(const SimpRender* r, SimpColor c) {
+    glClearColor(c.r, c.g, c.b, c.a);
+    glClear(GL_COLOR_BUFFER_BIT);
 }
 
 void simp_text(SimpRender* r,
@@ -183,10 +216,10 @@ void simp_text(SimpRender* r,
     }
 }
 
-void simp_flush(SimpRender* r, float w, float h) {
-    glViewport(0, 0, w, h);
+void simp_flush(SimpRender* r) {
+    glViewport(0, 0, r->window->w, r->window->h);
     float proj[16];
-    make_ortho(proj, w, h);
+    make_ortho(proj, r->window->w, r->window->h);
 
     // rectangles
     glBindVertexArray(r->color_vao);
