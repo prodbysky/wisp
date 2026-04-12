@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     common_flags(&c);
     if (!cmd_run(&c)) return 1;
 
-    cmd_append(&c, "gcc", "src/rgfw.c", "build/glad.o", "-o", "build/rgfw", "-lGL", "-lm", "-lX11", "-lXrandr");
+    cmd_append(&c, "gcc", "src/simp.c", "src/rgfw.c", "build/glad.o", "-o", "build/rgfw", "-lGL", "-lm", "-lX11", "-lXrandr");
     common_flags(&c);
     if (!cmd_run(&c)) return 1;
 }
