@@ -29,8 +29,17 @@ typedef struct {
     Pane pane;
 
     Audio audio;
+
+    Color* album_average_colors;
 } Wisp;
 
+static float color_luminance(Color c) {
+    float r = c.r / 255.0f;
+    float g = c.g / 255.0f;
+    float b = c.b / 255.0f;
+
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+}
 
 Wisp wisp_init(int argc, char** argv);
 void wisp_update(Wisp* w);
@@ -70,7 +79,7 @@ void wisp_draw(const Wisp* w) {
     const float window_w = GetScreenWidth();
     const float window_h = GetScreenHeight();
     BeginDrawing();
-    ClearBackground(BG_COLOR);
+    ClearBackground(ColorBrightness(w->album_average_colors[w->selected_album], 0.1));
 
     switch (w->pane) {
         case PANE_ALBUMS: {
@@ -120,30 +129,69 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
 
 static void draw_tracklist(const Wisp* w, Rectangle bound) {
     BeginScissorMode(bound.x, bound.y, bound.width, bound.height);
-    const float child_spacing = 8;
-    Album* selected = &w->library.albums.items[w->selected_album];
-    for (size_t i = 0; i < selected->tracks.count; i++) {
-        const float font_size = 24;
 
+    const float font_size = 24;
+    const float child_spacing = 8;
+
+    Album* selected = &w->library.albums.items[w->selected_album];
+
+    Color base = w->album_average_colors[w->selected_album];
+    float lum = color_luminance(base);
+
+    Color readable = (lum > 0.5f) ? BLACK : WHITE;
+
+    Color styled = ColorLerp(readable, base, 0.25f);
+
+    Color focused_text_color = styled;
+    Color unfocused_text_color = ColorAlpha(styled, 0.6f);
+
+    Color rect_color = (lum > 0.5f)
+        ? ColorLerp(base, BLACK, 0.5)
+        : ColorLerp(base, WHITE, 0.5);
+
+    for (size_t i = 0; i < selected->tracks.count; i++) {
         float y = (font_size + child_spacing) * i
                   + bound.y
                   - w->track_scroll;
 
         if (y < bound.y - font_size || y > bound.y + bound.height) continue;
 
-        if (i == w->selected_track) {
-            DrawTextEx(w->font, selected->tracks.items[i]->title,
-                       (Vector2){ bound.x, y },
-                       font_size, 0.0, WHITE);
-        } else {
-            DrawTextEx(w->font, selected->tracks.items[i]->title,
-                       (Vector2){ bound.x, y },
-                       font_size, 0.0, GRAY);
-        }
+        Rectangle rect = {
+            .x = bound.x,
+            .y = y,
+            .width = GetScreenWidth() - bound.x * 2,
+            .height = font_size + 4,
+        };
+
+        DrawRectangleRounded(rect, 0.25f, 17, rect_color);
+
+        const char* title = selected->tracks.items[i]->title;
+
+        Color text_color = (i == w->selected_track)
+            ? focused_text_color
+            : unfocused_text_color;
+
+        DrawTextEx(
+            w->font,
+            title,
+            (Vector2){ rect.x + 5, rect.y + 3 },
+            font_size,
+            0.0f,
+            ColorAlpha(BLACK, 0.4f)
+        );
+
+        DrawTextEx(
+            w->font,
+            title,
+            (Vector2){ rect.x + 4, rect.y + 2 },
+            font_size,
+            0.0f,
+            text_color
+        );
     }
+
     EndScissorMode();
 }
-
 static void draw_album_list(const Wisp* w, Rectangle bound) {
     BeginScissorMode(bound.x, bound.y, bound.width, bound.height);
         for (size_t i = 0; i < w->library.albums.count; i++) {
@@ -277,8 +325,10 @@ Wisp wisp_init(int argc, char** argv) {
 
     Image*     imgs         = malloc(lib.albums.count * sizeof(Image));
     Texture2D* tex          = malloc(lib.albums.count * sizeof(Texture2D));
+    Color*     tints        = malloc(lib.albums.count * sizeof(Color));
 
     for (size_t i = 0; i < lib.albums.count; i++) {
+        float r = 0, g = 0, b = 0;
         Track* t = lib.albums.items[i].tracks.items[0];
         imgs[i] = (Image){
             .format  = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
@@ -287,15 +337,35 @@ Wisp wisp_init(int argc, char** argv) {
             .data    = t->cover,
             .mipmaps = 1,
         };
+        int sample_count = 10;
+        int count = 0;
+        for (int y = 0; y < t->cover_h; y += sample_count) {
+            for (int x = 0; x < t->cover_w; x += sample_count) {
+                size_t i = (y * t->cover_w + x) * 3;
+                r += (float)t->cover[i] / 255;
+                g += (float)t->cover[i + 1] / 255;
+                b += (float)t->cover[i + 2] / 255;
+                count++;
+            }
+        }
+        r /= (float)count;
+        g /= (float)count;
+        b /= (float)count;
+        r *= 255;
+        g *= 255;
+        b *= 255;
+        tints[i].r = r;
+        tints[i].g = g;
+        tints[i].b = b;
+        tints[i].a = 1;
         tex[i] = LoadTextureFromImage(imgs[i]);
-        free(lib.albums.items[i].tracks.items[0]->cover);
     }
-    free(imgs);
 
 
     return (Wisp){
         .font           = font,
         .library        = lib,
         .covers         = tex,
+        .album_average_colors = tints
     };
 }
