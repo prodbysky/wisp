@@ -210,6 +210,7 @@ static void draw_tracklist(const Wisp* w, Rectangle bound) {
 static void draw_album_list(const Wisp* w, Rectangle bound) {
     BeginScissorMode(bound.x, bound.y, bound.width, bound.height);
         for (size_t i = 0; i < w->library.albums.count; i++) {
+            if ((i * ALBUM_COVER_SIDE_LENGTH + w->actual_album_offset + bound.x) > bound.width) continue;
             const Rectangle cover_rect_dest = {
                 .width = ALBUM_COVER_SIDE_LENGTH,
                 .height = ALBUM_COVER_SIDE_LENGTH,
