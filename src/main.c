@@ -2,6 +2,8 @@
 #include "library.h"
 #include <assert.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #define BG_COLOR GetColor(0x181818ff)
 
@@ -30,12 +32,18 @@ typedef struct {
 } Wisp;
 
 
-Wisp wisp_init(void);
+Wisp wisp_init(int argc, char** argv);
 void wisp_update(Wisp* w);
 void wisp_draw(const Wisp* w);
 
-int main(void) {
-    Wisp ws = wisp_init();
+int main(int argc, char** argv) {
+    if (argc > 1 && strcmp("--help", argv[1]) == 0) {
+        printf("Usage:\n");
+        printf("%s [--help]: print this help message\n", argv[0]);
+        printf("%s <PATH>: use this path as the base of the music on your system\n", argv[0]);
+        return 1;
+    }
+    Wisp ws = wisp_init(argc, argv);
 
     while (!WindowShouldClose()) {
         wisp_update(&ws);
@@ -248,8 +256,14 @@ void wisp_update(Wisp* wisp) {
     wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * 0.1f;
 }
 
-Wisp wisp_init(void) {
-    Library lib = prepare_library("/home/shr/Downloads/Nicotine");
+Wisp wisp_init(int argc, char** argv) {
+    char* prog = argv[0];
+    char* home = getenv("HOME");
+    char default_path[512] = {0};
+    snprintf(default_path, 512, "%s/Music/", home);
+    char* path = default_path;
+    if (argc > 1) path = argv[1];
+    Library lib = prepare_library(path);
 
     SetWindowState(FLAG_MSAA_4X_HINT);
     InitWindow(1280, 720, "wispy");
