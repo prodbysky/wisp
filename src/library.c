@@ -7,11 +7,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../extern/dr_mp3.h"
+#include <pthread.h>
+#include <stdatomic.h>
+
+typedef struct {
+    Library* lib;
+    atomic_size_t index;
+} WorkerCtx;
 
 static void collect_dir(const char* dir_name, Paths* paths);
 
 static bool filter(char* c);
 static void filter_paths(Paths* paths, bool (*pred)(char*));
+
+static Track process_track(const char* path);
+static void* worker(void* arg);
 
 static int compare_track_by_number(const void* a, const void* b) {
     const Track* const * t1 = a;
@@ -103,65 +113,22 @@ Library prepare_library(const char* root_path) {
     filter_paths(&lib.ps, filter);
 
 
-    // collect info about the (flac only for now) tracks
-    for (size_t i = 0; i < lib.ps.count; i++) {
-        Track track = {.path = lib.ps.items[i]};
-        if (strstr(lib.ps.items[i], ".flac") != NULL) {
-            FLAC__StreamMetadata *tags = NULL, *picture = NULL;
+    lib.tracks.count = lib.ps.count;
+    lib.tracks.items = malloc(sizeof(Track) * lib.ps.count);
 
-            if (!FLAC__metadata_get_tags(lib.ps.items[i], &tags)) {
-                fprintf(stderr, "FLAC: failed to get tags for %s\n", lib.ps.items[i]);
-                continue;
-            }        
-            if (!FLAC__metadata_get_picture(lib.ps.items[i], &picture, FLAC__STREAM_METADATA_PICTURE_TYPE_FRONT_COVER, NULL, NULL, -1, -1, -1, -1)) {
-                fprintf(stderr, "FLAC: failed to get picture for %s\n", lib.ps.items[i]);
-                continue;
-            }
-            for (uint32_t j = 0; j < tags->data.vorbis_comment.num_comments; j++) {
-                FLAC__StreamMetadata_VorbisComment_Entry* comment = &tags->data.vorbis_comment.comments[j];
-                char* entry = (char*)comment->entry;
-                if (strncmp(entry, "ARTIST=", 7) == 0 || strncmp(entry, "artist=", 7) == 0) {
-                    track.artist = strndup(entry + 7, comment->length - 7);
-                } else if (strncmp(entry, "TITLE=", 6) == 0 || strncmp(entry, "title=", 6) == 0) {
-                    track.title = strndup(entry + 6, comment->length - 6);
-                } else if (strncmp(entry, "ALBUM=", 6) == 0 || strncmp(entry, "album=", 6) == 0) {
-                    track.album = strndup(entry + 6, comment->length - 6);
-                } else if (strncmp(entry, "TRACKNUMBER=", 12) == 0)  {
-                    uint32_t track_num_len = comment->length - 12;
-                    const char* track_num_begin = entry + 12;
-                    track.number = 0;
-                    for (size_t i = 0; i < track_num_len; i++) {
-                        track.number = track.number * 10 + (track_num_begin[i] - '0');
-                    } 
-                } else {
-                    // printf("WARN: %.*s\n", comment->length, comment->entry);
-                }
-            }
+    size_t thread_count = 6;
+    pthread_t threads[thread_count];
 
-            if (picture) {
-                int x, y, chan;
-                uint8_t* image = stbi_load_from_memory(picture->data.picture.data, picture->data.picture.data_length, &x, &y, &chan, 3);
+    WorkerCtx ctx = {
+        .lib = &lib,
+        .index = 0
+    };
 
-                if (image == NULL) {
-                    const unsigned char* d = picture->data.picture.data;
-                    printf("First bytes: %02X %02X %02X %02X\n", d[0], d[1], d[2], d[3]);
-                    printf("stbi failed: %s\n", stbi_failure_reason());
-                    printf("%s\n", picture->data.picture.mime_type);
-                    exit(0);
-                }
-                track.cover = image;
-                track.cover_w = x;
-                track.cover_h = y;
-            }
-            track.path = lib.ps.items[i];
-            FLAC__metadata_object_delete(tags);
-            FLAC__metadata_object_delete(picture);
-        } else if (strstr(lib.ps.items[i], ".mp3") != NULL) {
-            drmp3 mp3 = {0}; 
-            drmp3_init_file_with_metadata(&mp3, lib.ps.items[i], mp3_processor, &track, NULL);
-            // exit(0);
-        }
-        *yar_append(&lib.tracks) = track;
+    for (size_t i = 0; i < thread_count; i++) {
+        pthread_create(&threads[i], NULL, worker, &ctx);
+    }
+    for (size_t i = 0; i < thread_count; i++) {
+        pthread_join(threads[i], NULL);
     }
 
     // sort them by album
@@ -203,6 +170,69 @@ void unload_library(Library* lib) {
     for (size_t i = 0; i < lib->ps.count; i++) {
         free(lib->ps.items[i]);
     }
+}
+
+static void* worker(void* arg) {
+    WorkerCtx* ctx = arg;
+    Library* lib = ctx->lib;
+
+    while (1) {
+        size_t i = atomic_fetch_add(&ctx->index, 1);
+        if (i >= lib->ps.count) break;
+
+        lib->tracks.items[i] = process_track(lib->ps.items[i]);
+    }
+
+    return NULL;
+}
+
+static Track process_track(const char* path) {
+    Track track = {.path = path};
+
+    if (strstr(path, ".flac")) {
+        FLAC__StreamMetadata *tags = NULL, *picture = NULL;
+
+        if (FLAC__metadata_get_tags(path, &tags)) {
+            for (uint32_t j = 0; j < tags->data.vorbis_comment.num_comments; j++) {
+                char* entry = (char*)tags->data.vorbis_comment.comments[j].entry;
+
+                if (strncmp(entry, "ARTIST=", 7) == 0)
+                    track.artist = strndup(entry + 7, strlen(entry) - 7);
+                else if (strncmp(entry, "TITLE=", 6) == 0)
+                    track.title = strndup(entry + 6, strlen(entry) - 6);
+                else if (strncmp(entry, "ALBUM=", 6) == 0)
+                    track.album = strndup(entry + 6, strlen(entry) - 6);
+                else if (strncmp(entry, "TRACKNUMBER=", 12) == 0)
+                    track.number = atoi(entry + 12);
+            }
+        }
+
+        if (FLAC__metadata_get_picture(path, &picture,
+            FLAC__STREAM_METADATA_PICTURE_TYPE_FRONT_COVER,
+            NULL, NULL, -1, -1, -1, -1)) {
+
+            int x, y, chan;
+            uint8_t* image = stbi_load_from_memory(
+                picture->data.picture.data,
+                picture->data.picture.data_length,
+                &x, &y, &chan, 3);
+
+            if (image) {
+                track.cover = image;
+                track.cover_w = x;
+                track.cover_h = y;
+            }
+        }
+
+        if (tags) FLAC__metadata_object_delete(tags);
+        if (picture) FLAC__metadata_object_delete(picture);
+
+    } else if (strstr(path, ".mp3")) {
+        drmp3 mp3 = {0};
+        drmp3_init_file_with_metadata(&mp3, path, mp3_processor, &track, NULL);
+    }
+
+    return track;
 }
 
 static void collect_dir(const char* dir_name, Paths* paths) {
