@@ -31,6 +31,8 @@ typedef struct {
     Audio audio;
 
     Color* album_average_colors;
+    Color last_color;
+    float last_switch;
 } Wisp;
 
 static float color_luminance(Color c) {
@@ -79,7 +81,15 @@ void wisp_draw(const Wisp* w) {
     const float window_w = GetScreenWidth();
     const float window_h = GetScreenHeight();
     BeginDrawing();
-    ClearBackground(ColorBrightness(w->album_average_colors[w->selected_album], 0.1));
+    float t = (GetTime() - w->last_switch) / 0.2;
+    if (t < 0) t = 0; if (t > 1) t = 1;
+    ClearBackground(
+        ColorLerp(
+            w->last_color, 
+            ColorBrightness(w->album_average_colors[w->selected_album], 0.0),
+            t
+        )
+    );
 
     switch (w->pane) {
         case PANE_ALBUMS: {
@@ -135,15 +145,16 @@ static void draw_tracklist(const Wisp* w, Rectangle bound) {
 
     Album* selected = &w->library.albums.items[w->selected_album];
 
+
     Color base = w->album_average_colors[w->selected_album];
     float lum = color_luminance(base);
 
     Color readable = (lum > 0.5f) ? BLACK : WHITE;
 
-    Color styled = ColorLerp(readable, base, 0.25f);
+    Color styled = ColorLerp(readable, base, 0.15f);
 
     Color focused_text_color = styled;
-    Color unfocused_text_color = ColorAlpha(styled, 0.6f);
+    Color unfocused_text_color = ColorAlpha(styled, 0.0f);
 
     Color rect_color = (lum > 0.5f)
         ? ColorLerp(base, BLACK, 0.5)
@@ -171,13 +182,17 @@ static void draw_tracklist(const Wisp* w, Rectangle bound) {
             ? focused_text_color
             : unfocused_text_color;
 
+        Color shadow_color = (lum > 0.5)
+            ? BLACK
+            : WHITE;
+
         DrawTextEx(
             w->font,
             title,
             (Vector2){ rect.x + 5, rect.y + 3 },
             font_size,
             0.0f,
-            ColorAlpha(BLACK, 0.4f)
+            ColorAlpha(shadow_color, 0.8f)
         );
 
         DrawTextEx(
@@ -242,12 +257,16 @@ void wisp_update(Wisp* wisp) {
     {
         if (IsKeyPressed(KEY_L) && wisp->selected_album < wisp->library.albums.count - 1) {
             wisp->wanted_album_offset -= ALBUM_COVER_SIDE_LENGTH;
+            wisp->last_color = wisp->album_average_colors[wisp->selected_album];
+            wisp->last_switch = GetTime();
             wisp->selected_album++;
             wisp->selected_track = 0;
         }
 
         if (IsKeyPressed(KEY_H) && wisp->selected_album != 0) {
             wisp->wanted_album_offset += ALBUM_COVER_SIDE_LENGTH;
+            wisp->last_color = wisp->album_average_colors[wisp->selected_album];
+            wisp->last_switch = GetTime();
             wisp->selected_album--;
             wisp->selected_track = 0;
         }
