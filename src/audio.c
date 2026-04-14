@@ -1,110 +1,195 @@
 #include "audio.h"
+#include <stdlib.h>
 
-static void queue_push(Queue* q, Track* track);
-static void queue_remove(Queue* q, size_t n);
-static Track* queue_advance(Queue* q);
+static void list_push(TrackList *l, Track *t);
+static Track *list_pop_front(TrackList *l);
+static Track *list_pop_back(TrackList *l);
+static void list_remove(TrackList *l, size_t index);
+static size_t list_random_index(TrackList *l);
 
+static Track *queue_next(Audio *a);
+static Track *queue_prev(Audio *a);
 
-void audio_stop_playback(Audio* a) {
-    if (a->current_track == NULL) return;
-    StopMusicStream(a->music);
-    UnloadMusicStream(a->music);
-    a->current_track = NULL;
-    a->playing       = false;
+void audio_start_playback(Audio *a, Track *track) {
+  if (track == NULL)
+    return;
+
+  a->music = LoadMusicStream(track->path);
+  a->music.looping = false;
+
+  a->current_track = track;
+  a->playing = true;
+
+  PlayMusicStream(a->music);
 }
 
-bool audio_has_loaded_track(const Audio* a) {
-    return a->current_track != NULL;
+void audio_stop_playback(Audio *a) {
+  if (a->current_track == NULL)
+    return;
+
+  StopMusicStream(a->music);
+  UnloadMusicStream(a->music);
+
+  a->current_track = NULL;
+  a->playing = false;
 }
 
-const char* audio_get_current_track_title(const Audio* a) {
-    if (a->current_track == NULL) return NULL;
-    return a->current_track->title;
+bool audio_has_loaded_track(const Audio *a) { return a->current_track != NULL; }
+
+const char *audio_get_current_track_title(const Audio *a) {
+  return a->current_track ? a->current_track->title : NULL;
 }
 
-void audio_start_playback(Audio* a, Track* track) {
-    a->music             = LoadMusicStream(track->path);
-    a->music.looping     = false;
-    a->current_track = track;
-    a->playing       = true;
-    PlayMusicStream(a->music);
+bool audio_queue_is_empty(const Audio *a) {
+  return a->queue.upcoming.items.count == 0;
 }
 
-bool audio_queue_is_empty(const Audio* a) {
-    return a->queue.tracks.count == 0;
+void audio_enqueue_single(Audio *a, Track *track) {
+  list_push(&a->queue.upcoming, track);
 }
 
-void audio_advance_queue(Audio* a) {
-    Track* next = queue_advance(&a->queue);
-    if (next == NULL) {
-        audio_stop_playback(a);
+void audio_set_shuffle(Audio *a, bool enabled) { a->shuffle = enabled; }
+
+void audio_set_loop_mode(Audio *a, LoopMode mode) { a->loop_mode = mode; }
+
+static Track *queue_next(Audio *a) {
+  if (a->loop_mode == LOOP_ONE && a->current_track) {
+    return a->current_track;
+  }
+
+  if (a->current_track) {
+    list_push(&a->queue.history, a->current_track);
+  }
+
+  if (audio_queue_is_empty(a)) {
+    if (a->loop_mode == LOOP_ALL && a->queue.history.items.count > 0) {
+      a->queue.upcoming = a->queue.history;
+      a->queue.history.items.count = 0;
+    } else {
+      return NULL;
     }
-    else {
-        audio_start_playback(a, next);
+  }
+
+  if (a->shuffle) {
+    size_t idx = list_random_index(&a->queue.upcoming);
+    Track *t = a->queue.upcoming.items.items[idx];
+    list_remove(&a->queue.upcoming, idx);
+    return t;
+  }
+
+  return list_pop_front(&a->queue.upcoming);
+}
+
+static Track *queue_prev(Audio *a) {
+  if (a->queue.history.items.count == 0)
+    return NULL;
+
+  if (a->current_track) {
+    list_push(&a->queue.upcoming, a->current_track);
+  }
+
+  return list_pop_back(&a->queue.history);
+}
+
+void audio_skip_track_forward(Audio *a) {
+  Track *next = queue_next(a);
+
+  if (!next) {
+    audio_stop_playback(a);
+  } else {
+    audio_start_playback(a, next);
+  }
+}
+
+void audio_skip_track_backward(Audio *a) {
+  Track *prev = queue_prev(a);
+
+  if (prev) {
+    audio_start_playback(a, prev);
+  }
+}
+
+void audio_update(Audio *a) {
+  if (!a->current_track)
+    return;
+
+  UpdateMusicStream(a->music);
+
+  if (a->playing && !IsMusicStreamPlaying(a->music)) {
+    Track *next = queue_next(a);
+
+    if (!next) {
+      audio_stop_playback(a);
+    } else {
+      audio_start_playback(a, next);
     }
+  }
 }
 
-float audio_get_current_track_progress(const Audio* a) {
-    if (a->current_track == NULL) return 0.0f;
-    return GetMusicTimeLength(a->music) > 0.0f
-        ? GetMusicTimePlayed(a->music) / GetMusicTimeLength(a->music)
-        : 0.0f;
+void audio_toggle_playing_state(Audio *a) {
+  if (!a->current_track)
+    return;
+
+  if (a->playing) {
+    PauseMusicStream(a->music);
+  } else {
+    ResumeMusicStream(a->music);
+  }
+
+  a->playing = !a->playing;
 }
 
-void audio_update(Audio* a) {
-    if (a->current_track != NULL) {
-        UpdateMusicStream(a->music);
-        if (a->playing && !IsMusicStreamPlaying(a->music)) audio_advance_queue(a);
-    }
+float audio_get_current_track_progress(const Audio *a) {
+  if (!a->current_track)
+    return 0.0f;
+
+  float len = GetMusicTimeLength(a->music);
+  if (len <= 0.0f)
+    return 0.0f;
+
+  return GetMusicTimePlayed(a->music) / len;
 }
 
-void audio_toggle_playing_state(Audio* a) {
-    if (a->current_track != NULL) {
-        if (a->playing) { 
-            PauseMusicStream(a->music);
-        }
-        else { 
-            ResumeMusicStream(a->music);
-        }
-        a->playing = !a->playing;
-    }
+void audio_try_seeking_by(Audio *a, float diff) {
+  if (!a->current_track || diff == 0.0f)
+    return;
+
+  float pos = GetMusicTimePlayed(a->music) + diff;
+  float len = GetMusicTimeLength(a->music);
+
+  if (pos < 0.0f)
+    pos = 0.0f;
+  if (pos > len)
+    pos = len;
+
+  SeekMusicStream(a->music, pos);
 }
 
-void audio_enqueue_single(Audio* a, Track* track) {
-    queue_push(&a->queue, track);
+static void list_push(TrackList *l, Track *t) { *yar_append(&l->items) = t; }
+
+static Track *list_pop_front(TrackList *l) {
+  if (l->items.count == 0)
+    return NULL;
+
+  Track *t = l->items.items[0];
+  yar_remove(&l->items, 0, 1);
+  return t;
 }
 
-void audio_try_seeking_by(Audio* a, float diff) {
-    if (diff != 0.0f) {
-        float next_pos = GetMusicTimePlayed(a->music) + diff;
-        float len = GetMusicTimeLength(a->music);
-        if (next_pos < 0.0f) next_pos = 0.0f;
-        if (next_pos > len)  next_pos = len;
-        SeekMusicStream(a->music, next_pos);
-    }
+static Track *list_pop_back(TrackList *l) {
+  if (l->items.count == 0)
+    return NULL;
+
+  size_t i = l->items.count - 1;
+  Track *t = l->items.items[i];
+  yar_remove(&l->items, i, 1);
+  return t;
 }
 
-void audio_skip_track_forward(Audio* a) {
-    Track* next = queue_advance(&a->queue);
-    if (next == NULL) {
-        audio_stop_playback(a);
-    }
-    else {
-        audio_start_playback(a, next);
-    }
+static void list_remove(TrackList *l, size_t index) {
+  yar_remove(&l->items, index, 1);
 }
 
-static void queue_push(Queue* q, Track* track) {
-    *yar_append(&q->tracks) = track;
-}
-
-static void queue_remove(Queue* q, size_t n) {
-    yar_remove(&q->tracks, n, 1);
-}
-
-static Track* queue_advance(Queue* q) {
-    if (q->tracks.count == 0) return NULL;
-    Track* next = q->tracks.items[0];
-    queue_remove(q, 0);
-    return next;
+static size_t list_random_index(TrackList *l) {
+  return (size_t)(rand() % l->items.count);
 }
