@@ -10,6 +10,7 @@
 typedef enum {
     PANE_ALBUMS,
     PANE_QUEUE,
+    PANE_VISUAL,
     PANE_COUNT,
 } Pane;
 
@@ -116,6 +117,10 @@ void wisp_draw(const Wisp* w) {
         case PANE_QUEUE: {
             const Rectangle track_list = {.x = 8, .y = 8, .width = window_w, .height = window_h};
             draw_queue(w, track_list);
+            break;
+        }
+        case PANE_VISUAL: {
+            DrawTextEx(w->font, "dft", (Vector2){}, 24, 0.0, WHITE);
             break;
         }
         case PANE_COUNT: assert(false);
