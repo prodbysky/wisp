@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "audio.h"
 #include "library.h"
@@ -15,7 +16,9 @@ void audio_callback(void* samples, uint32_t n_samples) {
 
     if (n_samples < DFT_SIZE) return;
 
-    for (int i = 0; i < DFT_SIZE; i++) { dft_shared_buf[i] = 0.5f * (s[i * 2] + s[i * 2 + 1]); }
+    for (int i = 0; i < DFT_SIZE; i++) {
+        dft_shared_buf[i] = 0.5f * (s[i*2] + s[i*2+1]);
+    }
     dft_shared_buf_ready = true;
 }
 
@@ -137,11 +140,16 @@ void wisp_draw(const Wisp* w) {
             break;
         }
         case PANE_VISUAL: {
-            const Rectangle dft_rect = {.x = 0, .y = 0, .width = window_w, .height = window_h};
+            const Rectangle dft_rect = {
+                .x = 0,
+                .y = -window_h,
+                .width = window_w,
+                .height = window_h * 2
+            };
+            if (w->audio.current_track == NULL) break;
             const char* title = w->audio.current_track->title;
             const char* album = w->audio.current_track->album;
             const char* artist = w->audio.current_track->artist;
-            float ref = fminf(window_w, window_h) / 2;
             draw_dft(w, dft_rect);
             const Theme t = wisp_derive_theme(w);
             DrawTextEx(w->font, title, (Vector2){.x = 8, .y = 8}, 24, 0.0, t.focused_text);
@@ -152,7 +160,7 @@ void wisp_draw(const Wisp* w) {
             DrawTextEx(w->font, album, (Vector2){.x = 8 + 2, .y = 40 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
             DrawTextEx(w->font, artist, (Vector2){.x = 8 + 2, .y = 72 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
             break;
-        }
+}
         case PANE_COUNT: assert(false);
     }
     EndDrawing();
@@ -221,9 +229,10 @@ static void draw_dft(const Wisp* w, Rectangle bound) {
 #define BARS 64
     for (int i = 0; i < BARS; i++) {
         float t0 = (float)i / BARS;
-        float t1 = (float)(i + 1) / BARS;
-        int k0 = powf(t0, 2.0f) * (DFT_SIZE / 2.0);
-        int k1 = powf(t1, 2.0f) * (DFT_SIZE / 2.0);
+        float t1 = (float)(i+1) / BARS;
+
+        int k0 = powf(t0, 2.0f) * (DFT_SIZE/2.0);
+        int k1 = powf(t1, 2.0f) * (DFT_SIZE/2.0);
         float sum = 0;
         int count = 0;
         for (int k = k0; k < k1; k++) {
@@ -234,9 +243,15 @@ static void draw_dft(const Wisp* w, Rectangle bound) {
         mag = logf(1.0f + mag);
         float h = mag * bound.height / 3.0;
         // ignore the damn warning if we deal with floats the bars get weird aliasing issues
-        DrawRectangleGradientV(i * ((int)bound.width / BARS) + bound.x, bound.height - h + bound.y,
-                               (bound.width / BARS), h, t.unfocused_text, t.rectangle);
-    }
+        DrawRectangleGradientV(i * ((int)bound.width / BARS) + bound.x,
+                      bound.height - h + bound.y,
+                      (bound.width / BARS),
+                      h, 
+                      t.unfocused_text,
+                      t.rectangle
+                  );
+    }        
+
 }
 
 Theme wisp_derive_theme(const Wisp* w) {
@@ -244,6 +259,7 @@ Theme wisp_derive_theme(const Wisp* w) {
     float lum = color_luminance(base);
 
     Color styled = ColorLerp((lum > 0.5f) ? BLACK : WHITE, base, 0.15f);
+
 
     Color rect_color = (lum > 0.5f) ? ColorLerp(base, BLACK, 0.5) : ColorLerp(base, WHITE, 0.5);
     Color shadow_color = (lum > 0.5) ? BLACK : WHITE;
@@ -333,6 +349,7 @@ void wisp_update(Wisp* wisp) {
     const bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
 
+
     if (dft_shared_buf_ready) {
         dft_shared_buf_ready = 0;
 
@@ -344,9 +361,16 @@ void wisp_update(Wisp* wisp) {
         compute_dft(dft_shared_buf, out, DFT_SIZE);
 
         for (int k = 0; k < DFT_SIZE / 2; k++) {
+
             float mag = sqrtf(out[k].real * out[k].real + out[k].imag * out[k].imag);
-            mag = logf(1.0f + mag);
-            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.8 + mag * 0.2;
+            float db = 20.0f * log10f(mag + 1e-6f);
+            const float min_db = -80.0f;
+            const float max_db = 0.0f;
+
+            float norm = (db - min_db) / (max_db - min_db);
+            if (norm < 0) norm = 0;
+            if (norm > 1) norm = 1;
+            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.7 + norm * 0.3;
         }
     }
 
@@ -445,6 +469,8 @@ void wisp_update(Wisp* wisp) {
 
     wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * 0.1f;
 }
+
+
 
 Wisp wisp_init(int argc, char** argv) {
     char* prog = argv[0];
