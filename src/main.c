@@ -185,12 +185,8 @@ Theme wisp_derive_theme(const Wisp* w) {
     Color base = w->album_average_colors[w->selected_album];
     float lum = color_luminance(base);
 
-    Color readable = (lum > 0.5f) ? BLACK : WHITE;
+    Color styled = ColorLerp((lum > 0.5f) ? BLACK : WHITE, base, 0.15f);
 
-    Color styled = ColorLerp(readable, base, 0.15f);
-
-    Color focused_text_color = styled;
-    Color unfocused_text_color = ColorAlpha(styled, 0.0f);
 
     Color rect_color = (lum > 0.5f) ? ColorLerp(base, BLACK, 0.5) : ColorLerp(base, WHITE, 0.5);
     Color shadow_color = (lum > 0.5) ? BLACK : WHITE;
