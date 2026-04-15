@@ -18,8 +18,13 @@ typedef struct {
     bool playing;
     Music music;
 
-    Queue queue;
+    // crossfade state
+    Music next_music;
+    Track* next_track;
+    float crossfade_progress;   // inactive when next_track == NULL
+    float crossfade_duration;   // seconds
 
+    Queue queue;
     bool shuffle;
     LoopMode loop_mode;
 } Audio;

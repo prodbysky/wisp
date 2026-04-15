@@ -14,25 +14,44 @@ static Track* queue_prev(Audio* a);
 void audio_start_playback(Audio* a, Track* track) {
     if (track == NULL) return;
 
+    // cancel any in-progress crossfade
+    if (a->next_track != NULL) {
+        StopMusicStream(a->next_music);
+        UnloadMusicStream(a->next_music);
+        a->next_track = NULL;
+        a->crossfade_progress = 0.0f;
+    }
+
+    if (a->current_track != NULL) {
+        StopMusicStream(a->music);
+        UnloadMusicStream(a->music);
+    }
+
     a->music = LoadMusicStream(track->path);
     a->music.looping = false;
-
     a->current_track = track;
     a->playing = true;
+    a->crossfade_duration = 5.0f;
 
     PlayMusicStream(a->music);
+    SetMusicVolume(a->music, 1.0f);
 }
 
 void audio_stop_playback(Audio* a) {
+    if (a->next_track != NULL) {
+        StopMusicStream(a->next_music);
+        UnloadMusicStream(a->next_music);
+        a->next_track = NULL;
+        a->crossfade_progress = 0.0f;
+    }
+
     if (a->current_track == NULL) return;
 
     StopMusicStream(a->music);
     UnloadMusicStream(a->music);
-
     a->current_track = NULL;
     a->playing = false;
 }
-
 bool audio_has_loaded_track(const Audio* a) { return a->current_track != NULL; }
 
 const char* audio_get_current_track_title(const Audio* a) { return a->current_track ? a->current_track->title : NULL; }
@@ -97,10 +116,51 @@ void audio_update(Audio* a) {
     if (!a->current_track) return;
 
     UpdateMusicStream(a->music);
+    if (a->next_track != NULL) UpdateMusicStream(a->next_music);
 
-    if (a->playing && !IsMusicStreamPlaying(a->music)) {
+    if (!a->playing) return;
+
+    float len     = GetMusicTimeLength(a->music);
+    float played  = GetMusicTimePlayed(a->music);
+    float remaining = len - played;
+
+    if (a->next_track == NULL && remaining <= a->crossfade_duration && remaining > 0.0f) {
         Track* next = queue_next(a);
+        if (next != NULL) {
+            a->next_track = next;
+            a->next_music = LoadMusicStream(next->path);
+            a->next_music.looping = false;
+            PlayMusicStream(a->next_music);
+            SetMusicVolume(a->next_music, 0.0f);
+            a->crossfade_progress = 0.0f;
+        }
+    }
 
+    if (a->next_track != NULL) {
+        a->crossfade_progress = 1.0f - (remaining / a->crossfade_duration);
+        if (a->crossfade_progress < 0.0f) a->crossfade_progress = 0.0f;
+        if (a->crossfade_progress > 1.0f) a->crossfade_progress = 1.0f;
+
+        float t = a->crossfade_progress;
+        float t_in  = t * t * (3.0f - 2.0f * t);
+        float t_out = 1.0f - t_in;
+
+        SetMusicVolume(a->music,      t_out);
+        SetMusicVolume(a->next_music, t_in);
+
+        if (!IsMusicStreamPlaying(a->music) || a->crossfade_progress >= 1.0f) {
+            StopMusicStream(a->music);
+            UnloadMusicStream(a->music);
+
+            a->music         = a->next_music;
+            a->current_track = a->next_track;
+            a->next_track    = NULL;
+            a->crossfade_progress = 0.0f;
+
+            SetMusicVolume(a->music, 1.0f);
+        }
+    } else if (!IsMusicStreamPlaying(a->music)) {
+        Track* next = queue_next(a);
         if (!next) {
             audio_stop_playback(a);
         } else {

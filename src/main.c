@@ -6,26 +6,10 @@
 
 #include "audio.h"
 #include "library.h"
+#include "dft.h"
 
-#define DFT_SIZE 512
-static float dft_shared_buf[DFT_SIZE];
-static size_t dft_shared_buf_head = 0;
-static volatile bool dft_shared_buf_ready = false;
-
-void audio_callback(void* samples, uint32_t n_samples) {
-    float* s = samples;
-
-    for (int i = 0; i < n_samples; i++) {
-        float l = s[i*2];
-        float r = s[i*2+1];
-        dft_shared_buf[dft_shared_buf_head++] = fabsf(l) > fabsf(r) ? l : r;
-        if (dft_shared_buf_head >= DFT_SIZE) {
-            dft_shared_buf_ready = true;
-            dft_shared_buf_head = 0;
-            return;
-        }
-    }
-}
+#define FONT_SIZE 24
+#define BARS 512
 
 typedef enum {
     PANE_ALBUMS,
@@ -67,8 +51,7 @@ static float color_luminance(Color c) {
 }
 
 Wisp wisp_init(int argc, char** argv);
-void wisp_update(Wisp* w);
-void wisp_draw(const Wisp* w);
+void wisp_tick(Wisp* wisp);
 
 typedef struct {
     Color focused_text;
@@ -92,8 +75,7 @@ int main(int argc, char** argv) {
     Wisp ws = wisp_init(argc, argv);
 
     while (!WindowShouldClose()) {
-        wisp_update(&ws);
-        wisp_draw(&ws);
+        wisp_tick(&ws);
     }
 
     audio_stop_playback(&ws.audio);
@@ -112,77 +94,250 @@ static void draw_tracklist(const Wisp* w, Rectangle bound);
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_dft(const Wisp* w, Rectangle bound);
 
+static void wisp_next_pane(Wisp* wisp);
+static void wisp_next_loop_mode(Wisp* wisp);
 
-void wisp_draw(const Wisp* w) {
-    const float window_w = GetScreenWidth();
-    const float window_h = GetScreenHeight();
+static void wisp_try_to_select_next_album(Wisp* wisp);
+static void wisp_try_to_select_prev_album(Wisp* wisp);
+
+static void wisp_try_to_select_next_track(Wisp* wisp);
+static void wisp_try_to_select_prev_track(Wisp* wisp);
+
+static void wisp_play_selected_track(Wisp* wisp);
+
+static void wisp_queue_selected_track(Wisp* wisp);
+static void wisp_queue_album_from_the_selected_track(Wisp* wisp);
+
+static const Album* wisp_get_selected_album(const Wisp* wisp);
+
+static Color wisp_get_lerped_base_color(const Wisp* wisp);
+
+static void prepare_dft_vis(Wisp* wisp);
+
+static void wisp_draw_visual_pane(Wisp* wisp);
+
+void wisp_tick(Wisp* wisp) {
+    const float WW = GetScreenWidth();
+    const float WH = GetScreenHeight();
+
+    const float BORDER_PAD = 8;
+    const float TRACKLIST_SPACING = 8;
+
+    const Rectangle album_list = {
+        .x = BORDER_PAD,
+        .y = BORDER_PAD,
+        .width = WW - 2 * BORDER_PAD,
+        .height = ALBUM_COVER_SIDE_LENGTH + 2 * BORDER_PAD
+    };
+
+    const Rectangle status_bar = {
+        .x = BORDER_PAD,
+        .y = WH - BORDER_PAD - 128,
+        .width = WW,
+        .height = 128 + BORDER_PAD * 2,
+    };
+
+    const Rectangle tracklist = {
+        .x = BORDER_PAD,
+        .y = album_list.height,
+        .width = WW,
+        .height = WH - album_list.height - status_bar.height
+    };
+
+    const float track_item_height = FONT_SIZE + 2 * TRACKLIST_SPACING;
+    const float tracklist_usable_height = tracklist.height - 2 * BORDER_PAD;
+    const float wanted_distance_from_bottom = tracklist_usable_height - track_item_height * 5;
+    const float selected_track_y = wisp->selected_track * track_item_height;
+
+    const float min_album_offset = fminf(0.0f, album_list.width - wisp->library.albums.count * ALBUM_COVER_SIDE_LENGTH);
+
+    wisp->wanted_track_scroll = selected_track_y - wanted_distance_from_bottom;
+    const Album* selected_album = &wisp->library.albums.items[wisp->selected_album];
+    const float max_track_scroll = fmaxf(0.0, selected_album->tracks.count * track_item_height - tracklist_usable_height);
+
+    if (wisp->wanted_track_scroll < 0.0) wisp->wanted_track_scroll = 0.0;
+    if (wisp->wanted_track_scroll > max_track_scroll) wisp->wanted_track_scroll = max_track_scroll;
+    wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * 0.15f;
+
+    if (wisp->wanted_album_offset < min_album_offset) wisp->wanted_album_offset = min_album_offset;
+    if (wisp->wanted_album_offset > 0.0) wisp->wanted_album_offset = 0.0;
+    wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * 0.1f;
+
+    { // hotkeys
+        const bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+        const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+
+        if (IsKeyPressed(KEY_TAB)) wisp_next_pane(wisp);
+
+        if (IsKeyPressed(KEY_SPACE)) audio_toggle_playing_state(&wisp->audio);
+
+        if (IsKeyPressed(KEY_PERIOD) && shift) audio_skip_track_forward(&wisp->audio);
+        if (IsKeyPressed(KEY_COMMA) && shift)  audio_skip_track_backward(&wisp->audio); 
+
+        if (IsKeyPressed(KEY_RIGHT)) audio_try_seeking_by(&wisp->audio, 5.0);
+        if (IsKeyPressed(KEY_LEFT)) audio_try_seeking_by(&wisp->audio, -5.0);
+
+        if (IsKeyPressed(KEY_S) && ctrl)  wisp->audio.shuffle = !wisp->audio.shuffle; 
+        if (IsKeyPressed(KEY_R) && ctrl) wisp_next_loop_mode(wisp);
+
+        if (IsKeyPressed(KEY_L)) wisp_try_to_select_next_album(wisp);
+        if (IsKeyPressed(KEY_H)) wisp_try_to_select_prev_album(wisp);
+
+        if (IsKeyPressed(KEY_J)) wisp_try_to_select_next_track(wisp);
+        if (IsKeyPressed(KEY_K)) wisp_try_to_select_prev_track(wisp);
+
+        if (IsKeyPressed(KEY_ENTER)) wisp_play_selected_track(wisp);
+
+        if (IsKeyPressed(KEY_Q) && !ctrl && !shift) wisp_queue_selected_track(wisp);
+
+        if (shift && IsKeyPressed(KEY_Q)) wisp_queue_album_from_the_selected_track(wisp);
+    }
+
+    prepare_dft_vis(wisp);
+    audio_update(&wisp->audio);
     BeginDrawing();
-    float t = (GetTime() - w->last_switch) / 0.2;
-    if (t < 0) t = 0;
-    if (t > 1) t = 1;
-    ClearBackground(ColorLerp(w->last_color, ColorBrightness(w->album_average_colors[w->selected_album], 0.0), t));
+    ClearBackground(wisp_get_lerped_base_color(wisp));
+    const Theme theme = wisp_derive_theme(wisp);
 
-    const Theme theme = wisp_derive_theme(w);
-
-    switch (w->pane) {
+    switch (wisp->pane) {
         case PANE_ALBUMS: {
-            const Rectangle side_bar = {
-                .width = window_w,
-                .height = ALBUM_COVER_SIDE_LENGTH,
-            };
-            draw_album_list(w, side_bar);
-
-            const Rectangle player_state = {
-                .x = 8,
-                .y = window_h - 136,
-                .width = window_w - 16,
-                .height = 128
-            };
-
-            const Rectangle track_list = {.x = 8,
-                                          .y = side_bar.height + 8,
-                                          .width = window_w,
-                                          .height = window_h - side_bar.height - player_state.height - 16};
-            draw_tracklist(w, track_list);
-            DrawRectangleRounded(player_state, 0.1, 16, ColorAlpha(theme.rectangle, 1.0));
+            draw_tracklist(wisp, tracklist);
+            draw_album_list(wisp, album_list);
+            DrawRectangleRounded(status_bar, 0.1, 16, ColorAlpha(theme.rectangle, 1.0));
             break;
         }
         case PANE_QUEUE: {
-            const Rectangle track_list = {.x = 8, .y = 8, .width = window_w, .height = window_h};
-            draw_queue(w, track_list);
+            const Rectangle queue = {.x = 8, .y = 8, .width = WW, .height = WH};
+            draw_queue(wisp, queue);
             break;
         }
         case PANE_VISUAL: {
-            const Rectangle dft_rect = {
-                .x = 0,
-                .y = -window_h,
-                .width = window_w,
-                .height = window_h * 2
-            };
-            if (w->audio.current_track == NULL) break;
-            const char* title = w->audio.current_track->title;
-            const char* album = w->audio.current_track->album;
-            const char* artist = w->audio.current_track->artist;
-            draw_dft(w, dft_rect);
-            const Theme t = wisp_derive_theme(w);
-            DrawTextEx(w->font, title, (Vector2){.x = 8, .y = 8}, 24, 0.0, t.focused_text);
-            DrawTextEx(w->font, album, (Vector2){.x = 8, .y = 40}, 24, 0.0, t.focused_text);
-            DrawTextEx(w->font, artist, (Vector2){.x = 8, .y = 72}, 24, 0.0, t.focused_text);
-
-            DrawTextEx(w->font, title, (Vector2){.x = 8 + 2, .y = 8 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
-            DrawTextEx(w->font, album, (Vector2){.x = 8 + 2, .y = 40 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
-            DrawTextEx(w->font, artist, (Vector2){.x = 8 + 2, .y = 72 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
+            wisp_draw_visual_pane(wisp);
             break;
-}
+        }
         case PANE_COUNT: assert(false);
     }
+
     EndDrawing();
 }
 
+static void wisp_draw_visual_pane(Wisp* wisp) {
+    const Rectangle dft_rect = {
+        .x = 0,
+        .y = -GetScreenHeight(),
+        .width = GetScreenWidth(),
+        .height = GetScreenHeight() * 2
+    };
+    if (wisp->audio.current_track == NULL) return;
+    const char* title = wisp->audio.current_track->title;
+    const char* album = wisp->audio.current_track->album;
+    const char* artist = wisp->audio.current_track->artist;
+    draw_dft(wisp, dft_rect);
+    const Theme t = wisp_derive_theme(wisp);
+    DrawTextEx(wisp->font, title, (Vector2){.x = 8, .y = 8}, FONT_SIZE, 0.0, t.focused_text);
+    DrawTextEx(wisp->font, album, (Vector2){.x = 8, .y = 40}, FONT_SIZE, 0.0, t.focused_text);
+    DrawTextEx(wisp->font, artist, (Vector2){.x = 8, .y = 72}, FONT_SIZE, 0.0, t.focused_text);
+
+    DrawTextEx(wisp->font, title, (Vector2){.x = 8 + 2, .y = 8 + 2}, FONT_SIZE, 0.0, ColorAlpha(t.shadow, -.1));
+    DrawTextEx(wisp->font, album, (Vector2){.x = 8 + 2, .y = 40 + 2}, FONT_SIZE, 0.0, ColorAlpha(t.shadow, -.1));
+    DrawTextEx(wisp->font, artist, (Vector2){.x = 8 + 2, .y = 72 + 2}, FONT_SIZE, 0.0, ColorAlpha(t.shadow, -.1));
+}
+
+static void wisp_next_pane(Wisp* wisp) {
+    wisp->pane++;
+    wisp->pane %= PANE_COUNT;
+}
+
+static const Album* wisp_get_selected_album(const Wisp* wisp) {
+    return &wisp->library.albums.items[wisp->selected_album];
+}
+
+static Color wisp_get_lerped_base_color(const Wisp* wisp) {
+    float t = (GetTime() - wisp->last_switch) / 0.2;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+
+    return ColorLerp(wisp->last_color, wisp->album_average_colors[wisp->selected_album], t);
+}
+
+static void wisp_next_loop_mode(Wisp* wisp) {
+    wisp->audio.loop_mode++;
+    if (wisp->audio.loop_mode > LOOP_ALL) wisp->audio.loop_mode = LOOP_NONE;
+}
+
+static void wisp_play_selected_track(Wisp* wisp) {
+    audio_start_playback(&wisp->audio, wisp_get_selected_album(wisp)->tracks.items[wisp->selected_track]);
+}
+
+static void wisp_queue_selected_track(Wisp* wisp) {
+    audio_enqueue_single(&wisp->audio, wisp_get_selected_album(wisp)->tracks.items[wisp->selected_track]);
+}
+
+static void wisp_queue_album_from_the_selected_track(Wisp* wisp) {
+    const Album* selected_album = wisp_get_selected_album(wisp);
+    for (size_t i = wisp->selected_track; i < selected_album->tracks.count; i++) {
+        audio_enqueue_single(&wisp->audio, selected_album->tracks.items[i]);
+    }
+}
+
+static void wisp_try_to_select_next_album(Wisp* wisp) {
+    if (IsKeyPressed(KEY_L) && wisp->selected_album < wisp->library.albums.count - 1) {
+        wisp->wanted_album_offset -= ALBUM_COVER_SIDE_LENGTH;
+        wisp->last_color = wisp->album_average_colors[wisp->selected_album];
+        wisp->last_switch = GetTime();
+        wisp->selected_album++;
+        wisp->selected_track = 0;
+    }
+}
+
+static void wisp_try_to_select_prev_album(Wisp* wisp) {
+    if (IsKeyPressed(KEY_H) && wisp->selected_album != 0) {
+        wisp->wanted_album_offset += ALBUM_COVER_SIDE_LENGTH;
+        wisp->last_color = wisp->album_average_colors[wisp->selected_album];
+        wisp->last_switch = GetTime();
+        wisp->selected_album--;
+        wisp->selected_track = 0;
+    }
+}
+
+static void wisp_try_to_select_next_track(Wisp* wisp) {
+    if (wisp->selected_track < wisp_get_selected_album(wisp)->tracks.count - 1) wisp->selected_track++;
+}
+
+static void wisp_try_to_select_prev_track(Wisp* wisp) {
+    if (wisp->selected_track > 0) wisp->selected_track--;
+}
+
+static void prepare_dft_vis(Wisp* wisp) {
+    if (dft_shared_buf_ready && wisp->pane == PANE_VISUAL) {
+        dft_shared_buf_ready = 0;
+
+        static Complex out[DFT_SIZE];
+        for (int i = 0; i < DFT_SIZE; i++) {
+            float w = 0.5f * (1.0f - cosf(2.0f * PI * i / (DFT_SIZE - 1)));
+            dft_shared_buf[i] *= w;
+        }
+        compute_dft(dft_shared_buf, out, DFT_SIZE);
+
+        for (int k = 0; k < DFT_SIZE / 2; k++) {
+
+            float mag = sqrtf(out[k].real * out[k].real + out[k].imag * out[k].imag);
+            float db = 20.0f * log10f(mag + 1e-6f);
+            const float min_db = -20.0f;
+            const float max_db = 20.0f;
+
+            float norm = (db - min_db) / (max_db - min_db);
+            if (norm < 0) norm = 0;
+            if (norm > 1) norm = 1;
+            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.6 + norm * 0.4;
+        }
+    }
+}
+
+
 static void draw_queue(const Wisp* w, Rectangle bound) {
-    const float font_size = 24.0f;
     const float child_spacing = 8.0f;
-    const float item_height = font_size + child_spacing;
+    const float item_height = FONT_SIZE + child_spacing;
 
     const Theme theme = wisp_derive_theme(w);
 
@@ -193,12 +348,12 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
             .x = bound.x,
             .y = center_y,
             .width = GetScreenWidth() - bound.x * 2,
-            .height = font_size + 4,
+            .height = FONT_SIZE + 4,
         };
 
         DrawRectangleRounded(rect, 0.25f, 17, theme.rectangle);
 
-        DrawTextEx(w->font, w->audio.current_track->title, (Vector2){bound.x + 5, center_y + 3}, font_size, 0.0f,
+        DrawTextEx(w->font, w->audio.current_track->title, (Vector2){bound.x + 5, center_y + 3}, FONT_SIZE, 0.0f,
                    theme.focused_text);
     }
 
@@ -211,12 +366,12 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
             .x = bound.x,
             .y = y,
             .width = GetScreenWidth() - bound.x * 2,
-            .height = font_size + 4,
+            .height = FONT_SIZE + 4,
         };
 
         DrawRectangleRounded(rect, 0.25f, 17, ColorBrightness(theme.rectangle, -0.2f));
 
-        DrawTextEx(w->font, w->audio.queue.history.items.items[idx]->title, (Vector2){bound.x + 5, y + 3}, font_size,
+        DrawTextEx(w->font, w->audio.queue.history.items.items[idx]->title, (Vector2){bound.x + 5, y + 3}, FONT_SIZE,
                    0.0f, ColorBrightness(theme.focused_text, -0.2f));
     }
 
@@ -227,12 +382,12 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
             .x = bound.x,
             .y = y,
             .width = GetScreenWidth() - bound.x * 2,
-            .height = font_size + 4,
+            .height = FONT_SIZE + 4,
         };
 
         DrawRectangleRounded(rect, 0.25f, 17, ColorBrightness(theme.rectangle, -0.2f));
 
-        DrawTextEx(w->font, w->audio.queue.upcoming.items.items[i]->title, (Vector2){bound.x + 5, y + 3}, font_size,
+        DrawTextEx(w->font, w->audio.queue.upcoming.items.items[i]->title, (Vector2){bound.x + 5, y + 3}, FONT_SIZE,
                    0.0f, ColorBrightness(theme.focused_text, -0.2f));
     }
 }
@@ -240,14 +395,13 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
 static void draw_dft(const Wisp* w, Rectangle bound) {
     const Theme t = wisp_derive_theme(w);
 
-    #define BARS 128
 
     for (int i = 0; i < BARS; i++) {
         float t0 = (float)i / BARS;
         float t1 = (float)(i + 1) / BARS;
 
         float min_k = 1.0f;
-        float max_k = DFT_SIZE / 2.0f;
+        float max_k = NYQUIST_LIMIT;
 
         float log_min = logf(min_k);
         float log_max = logf(max_k);
@@ -289,8 +443,9 @@ static void draw_dft(const Wisp* w, Rectangle bound) {
         );
     }
 }
+
 Theme wisp_derive_theme(const Wisp* w) {
-    Color base = w->album_average_colors[w->selected_album];
+    Color base = wisp_get_lerped_base_color(w);
     float lum = color_luminance(base);
 
     Color styled = ColorLerp((lum > 0.5f) ? BLACK : WHITE, base, 0.15f);
@@ -306,9 +461,7 @@ Theme wisp_derive_theme(const Wisp* w) {
 }
 
 static void draw_tracklist(const Wisp* w, Rectangle bound) {
-    BeginScissorMode(bound.x, bound.y, bound.width, bound.height);
 
-    const float font_size = 24;
     const float child_spacing = 8;
 
     Album* selected = &w->library.albums.items[w->selected_album];
@@ -316,15 +469,15 @@ static void draw_tracklist(const Wisp* w, Rectangle bound) {
     const Theme theme = wisp_derive_theme(w);
 
     for (size_t i = 0; i < selected->tracks.count; i++) {
-        float y = (font_size + child_spacing) * i + bound.y - w->track_scroll;
+        float y = (FONT_SIZE + child_spacing) * i + bound.y - w->track_scroll;
 
-        if (y < bound.y - font_size || y > bound.y + bound.height) continue;
+        if (y < bound.y - FONT_SIZE || y > bound.y + bound.height) continue;
 
         Rectangle rect = {
             .x = bound.x,
             .y = y,
             .width = bound.width - bound.x * 2,
-            .height = font_size + 4,
+            .height = FONT_SIZE + 4,
         };
 
         DrawRectangleRounded(rect, 0.25f, 17, theme.rectangle);
@@ -333,21 +486,19 @@ static void draw_tracklist(const Wisp* w, Rectangle bound) {
 
         Color text_color = (i == w->selected_track) ? theme.focused_text : theme.unfocused_text;
 
-        DrawTextEx(w->font, title, (Vector2){rect.x + 5, rect.y + 3}, font_size, 0.0f, theme.shadow);
+        DrawTextEx(w->font, title, (Vector2){rect.x + 5, rect.y + 3}, FONT_SIZE, 0.0f, theme.shadow);
 
-        DrawTextEx(w->font, title, (Vector2){rect.x + 4, rect.y + 2}, font_size, 0.0f, text_color);
+        DrawTextEx(w->font, title, (Vector2){rect.x + 4, rect.y + 2}, FONT_SIZE, 0.0f, text_color);
     }
-
-    EndScissorMode();
 }
 static void draw_album_list(const Wisp* w, Rectangle bound) {
-    BeginScissorMode(bound.x, bound.y, bound.width, bound.height);
     for (size_t i = 0; i < w->library.albums.count; i++) {
         if ((i * ALBUM_COVER_SIDE_LENGTH + w->actual_album_offset + bound.x) > bound.width) continue;
         const Rectangle cover_rect_dest = {
             .width = ALBUM_COVER_SIDE_LENGTH,
             .height = ALBUM_COVER_SIDE_LENGTH,
             .x = i * ALBUM_COVER_SIDE_LENGTH + w->actual_album_offset + bound.x,
+            .y = bound.y
         };
         const Rectangle cover_rect_src = {
             .width = w->covers[i].width,
@@ -356,156 +507,7 @@ static void draw_album_list(const Wisp* w, Rectangle bound) {
         DrawTexturePro(w->covers[i], cover_rect_src, cover_rect_dest, (Vector2){}, 0.0, WHITE);
         if (i != w->selected_album) { DrawRectangleRec(cover_rect_dest, GetColor(0x000000aa)); }
     }
-    EndScissorMode();
 }
-
-typedef struct {
-    float real;
-    float imag;
-} Complex;
-
-void compute_dft(float* in, Complex* out, int N) {
-    for (int k = 0; k < N; k++) {
-        float real = 0.0f;
-        float imag = 0.0f;
-
-        for (int n = 0; n < N; n++) {
-            float angle = 2.0f * PI * k * n / N;
-            real += in[n] * cosf(angle);
-            imag -= in[n] * sinf(angle);
-        }
-
-        out[k].real = real;
-        out[k].imag = imag;
-    }
-}
-
-void wisp_update(Wisp* wisp) {
-    const bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
-    const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-
-
-    if (dft_shared_buf_ready && wisp->pane == PANE_VISUAL) {
-        dft_shared_buf_ready = 0;
-
-        static Complex out[DFT_SIZE];
-        for (int i = 0; i < DFT_SIZE; i++) {
-            float w = 0.5f * (1.0f - cosf(2.0f * PI * i / (DFT_SIZE - 1)));
-            dft_shared_buf[i] *= w;
-        }
-        compute_dft(dft_shared_buf, out, DFT_SIZE);
-
-        for (int k = 0; k < DFT_SIZE / 2; k++) {
-
-            float mag = sqrtf(out[k].real * out[k].real + out[k].imag * out[k].imag);
-            float db = 20.0f * log10f(mag + 1e-6f);
-            const float min_db = -20.0f;
-            const float max_db = 20.0f;
-
-            float norm = (db - min_db) / (max_db - min_db);
-            if (norm < 0) norm = 0;
-            if (norm > 1) norm = 1;
-            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.6 + norm * 0.4;
-        }
-    }
-
-    // screen controls
-    {
-        if (IsKeyPressed(KEY_TAB)) {
-            wisp->pane++;
-            wisp->pane %= PANE_COUNT;
-        }
-    }
-
-    // audio related shit
-    {
-        if (IsKeyPressed(KEY_SPACE)) audio_toggle_playing_state(&wisp->audio);
-
-        if (IsKeyPressed(KEY_PERIOD) && shift) audio_skip_track_forward(&wisp->audio);
-
-        if (IsKeyPressed(KEY_RIGHT)) audio_try_seeking_by(&wisp->audio, 5.0);
-        if (IsKeyPressed(KEY_LEFT)) audio_try_seeking_by(&wisp->audio, -5.0);
-
-        if (IsKeyPressed(KEY_COMMA) && shift) { audio_skip_track_backward(&wisp->audio); }
-        if (IsKeyPressed(KEY_S) && ctrl) { wisp->audio.shuffle = !wisp->audio.shuffle; }
-
-        // cycle loop mode
-        if (IsKeyPressed(KEY_R) && ctrl) {
-            wisp->audio.loop_mode++;
-            if (wisp->audio.loop_mode > LOOP_ALL) wisp->audio.loop_mode = LOOP_NONE;
-        }
-        audio_update(&wisp->audio);
-    }
-    // album selection top or side bar still dont know?
-    {
-        if (IsKeyPressed(KEY_L) && wisp->selected_album < wisp->library.albums.count - 1) {
-            wisp->wanted_album_offset -= ALBUM_COVER_SIDE_LENGTH;
-            wisp->last_color = wisp->album_average_colors[wisp->selected_album];
-            wisp->last_switch = GetTime();
-            wisp->selected_album++;
-            wisp->selected_track = 0;
-        }
-
-        if (IsKeyPressed(KEY_H) && wisp->selected_album != 0) {
-            wisp->wanted_album_offset += ALBUM_COVER_SIDE_LENGTH;
-            wisp->last_color = wisp->album_average_colors[wisp->selected_album];
-            wisp->last_switch = GetTime();
-            wisp->selected_album--;
-            wisp->selected_track = 0;
-        }
-    }
-
-    // track selection
-    {
-        Album* selected_album = &wisp->library.albums.items[wisp->selected_album];
-        size_t album_track_count = selected_album->tracks.count;
-        if (IsKeyPressed(KEY_J) && wisp->selected_track < album_track_count - 1) wisp->selected_track++;
-        if (IsKeyPressed(KEY_K) && wisp->selected_track != 0) wisp->selected_track--;
-
-        if (IsKeyPressed(KEY_ENTER))
-            audio_start_playback(&wisp->audio, selected_album->tracks.items[wisp->selected_track]);
-
-        // push currently selected song into the queue
-        if (IsKeyPressed(KEY_Q) && !ctrl && !shift)
-            audio_enqueue_single(&wisp->audio, selected_album->tracks.items[wisp->selected_track]);
-
-        // push songs from the current track to the end from the currently
-        // selected album
-        if (shift && IsKeyPressed(KEY_Q)) {
-            for (size_t i = wisp->selected_track; i < selected_album->tracks.count; i++) {
-                audio_enqueue_single(&wisp->audio, selected_album->tracks.items[i]);
-            }
-        }
-    }
-    // track offset calculation :))
-    {
-        const float font_size = 24;
-        const float spacing = 8;
-        const float item_height = font_size + spacing;
-        const float track_area_height = GetScreenHeight() - 160 - ALBUM_COVER_SIDE_LENGTH - 8;
-        const float desired_y_from_top = track_area_height - item_height * 5;
-        const float selected_y = wisp->selected_track * item_height;
-
-        wisp->wanted_track_scroll = selected_y - desired_y_from_top;
-
-        Album* album = &wisp->library.albums.items[wisp->selected_album];
-        float max_scroll = fmaxf(0.0f, album->tracks.count * item_height - track_area_height);
-
-        if (wisp->wanted_track_scroll < 0.0f) wisp->wanted_track_scroll = 0.0f;
-        if (wisp->wanted_track_scroll > max_scroll) wisp->wanted_track_scroll = max_scroll;
-
-        wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * 0.15f;
-    }
-
-    const float min_offset = fminf(0.0f, GetScreenWidth() - wisp->library.albums.count * ALBUM_COVER_SIDE_LENGTH);
-
-    if (wisp->wanted_album_offset < min_offset) wisp->wanted_album_offset = min_offset;
-    if (wisp->wanted_album_offset > 0.0) wisp->wanted_album_offset = 0.0;
-
-    wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * 0.1f;
-}
-
-
 
 Wisp wisp_init(int argc, char** argv) {
     char* prog = argv[0];
@@ -522,9 +524,9 @@ Wisp wisp_init(int argc, char** argv) {
     SetWindowState(FLAG_WINDOW_RESIZABLE);
     InitAudioDevice();
     SetTargetFPS(180);
-    AttachAudioMixedProcessor(audio_callback);
+    AttachAudioMixedProcessor(fill_dft_buffer_callback);
 
-    Font font = LoadFontEx("res/Iosevka.ttf", 24, NULL, 0);
+    Font font = LoadFontEx("res/Iosevka.ttf", FONT_SIZE, NULL, 0);
     SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
 
     Image* imgs = malloc(lib.albums.count * sizeof(Image));
