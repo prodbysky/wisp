@@ -7,19 +7,24 @@
 #include "audio.h"
 #include "library.h"
 
-#define DFT_SIZE 800
+#define DFT_SIZE 512
 static float dft_shared_buf[DFT_SIZE];
+static size_t dft_shared_buf_head = 0;
 static volatile bool dft_shared_buf_ready = false;
 
 void audio_callback(void* samples, uint32_t n_samples) {
     float* s = samples;
 
-    if (n_samples < DFT_SIZE) return;
-
-    for (int i = 0; i < DFT_SIZE; i++) {
-        dft_shared_buf[i] = 0.5f * (s[i*2] + s[i*2+1]);
+    for (int i = 0; i < n_samples; i++) {
+        float l = s[i*2];
+        float r = s[i*2+1];
+        dft_shared_buf[dft_shared_buf_head++] = fabsf(l) > fabsf(r) ? l : r;
+        if (dft_shared_buf_head >= DFT_SIZE) {
+            dft_shared_buf_ready = true;
+            dft_shared_buf_head = 0;
+            return;
+        }
     }
-    dft_shared_buf_ready = true;
 }
 
 typedef enum {
@@ -107,7 +112,6 @@ static void draw_tracklist(const Wisp* w, Rectangle bound);
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_dft(const Wisp* w, Rectangle bound);
 
-// TODO: Shift colors with the selected albums cover color
 void wisp_draw(const Wisp* w) {
     const float window_w = GetScreenWidth();
     const float window_h = GetScreenHeight();
@@ -226,34 +230,56 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
 
 static void draw_dft(const Wisp* w, Rectangle bound) {
     const Theme t = wisp_derive_theme(w);
-#define BARS 64
+
+    #define BARS 128
+
     for (int i = 0; i < BARS; i++) {
         float t0 = (float)i / BARS;
-        float t1 = (float)(i+1) / BARS;
+        float t1 = (float)(i + 1) / BARS;
 
-        int k0 = powf(t0, 2.0f) * (DFT_SIZE/2.0);
-        int k1 = powf(t1, 2.0f) * (DFT_SIZE/2.0);
-        float sum = 0;
+        float min_k = 1.0f;
+        float max_k = DFT_SIZE / 2.0f;
+
+        float log_min = logf(min_k);
+        float log_max = logf(max_k);
+
+        int k0 = expf(log_min + (log_max - log_min) * t0);
+        int k1 = expf(log_min + (log_max - log_min) * t1);
+
+        if (k1 <= k0) k1 = k0 + 1;
+
+        float sum = 0.0f;
         int count = 0;
         for (int k = k0; k < k1; k++) {
             sum += w->magnitudes[k];
             count++;
         }
-        float mag = (count > 0) ? sum / count : 0;
+
+        float mag = (count > 0) ? sum / count : 0.0f;
         mag = logf(1.0f + mag);
-        float h = mag * bound.height / 3.0;
-        // ignore the damn warning if we deal with floats the bars get weird aliasing issues
-        DrawRectangleGradientV(i * ((int)bound.width / BARS) + bound.x,
-                      bound.height - h + bound.y,
-                      (bound.width / BARS),
-                      h, 
-                      t.unfocused_text,
-                      t.rectangle
-                  );
-    }        
 
+        float h = mag * bound.height / 3.0f;
+
+        float fx0 = bound.x + ((float)i / BARS) * bound.width;
+        float fx1 = bound.x + ((float)(i + 1) / BARS) * bound.width;
+
+        int x0 = (int)fx0;
+        int x1 = (int)fx1;
+
+        if (x1 <= x0) x1 = x0 + 1;
+
+        int width = x1 - x0;
+
+        DrawRectangleGradientV(
+            x0,
+            (int)(bound.y + bound.height - h),
+            width,
+            (int)h,
+            t.unfocused_text,
+            t.rectangle
+        );
+    }
 }
-
 Theme wisp_derive_theme(const Wisp* w) {
     Color base = w->album_average_colors[w->selected_album];
     float lum = color_luminance(base);
@@ -364,13 +390,13 @@ void wisp_update(Wisp* wisp) {
 
             float mag = sqrtf(out[k].real * out[k].real + out[k].imag * out[k].imag);
             float db = 20.0f * log10f(mag + 1e-6f);
-            const float min_db = -80.0f;
-            const float max_db = 0.0f;
+            const float min_db = -20.0f;
+            const float max_db = 20.0f;
 
             float norm = (db - min_db) / (max_db - min_db);
             if (norm < 0) norm = 0;
             if (norm > 1) norm = 1;
-            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.7 + norm * 0.3;
+            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.6 + norm * 0.4;
         }
     }
 
@@ -532,3 +558,4 @@ Wisp wisp_init(int argc, char** argv) {
 
     return (Wisp){.font = font, .library = lib, .covers = tex, .album_average_colors = tints};
 }
+
