@@ -112,6 +112,7 @@ static void draw_tracklist(const Wisp* w, Rectangle bound);
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_dft(const Wisp* w, Rectangle bound);
 
+
 void wisp_draw(const Wisp* w) {
     const float window_w = GetScreenWidth();
     const float window_h = GetScreenHeight();
