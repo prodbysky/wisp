@@ -2,14 +2,35 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "audio.h"
 #include "library.h"
 
+#define DFT_SIZE 512
+static float dft_shared_buf[DFT_SIZE];
+static size_t dft_shared_buf_head = 0;
+static volatile bool dft_shared_buf_ready = false;
+
+void audio_callback(void* samples, uint32_t n_samples) {
+    float* s = samples;
+
+    for (int i = 0; i < n_samples; i++) {
+        float l = s[i*2];
+        float r = s[i*2+1];
+        dft_shared_buf[dft_shared_buf_head++] = fabsf(l) > fabsf(r) ? l : r;
+        if (dft_shared_buf_head >= DFT_SIZE) {
+            dft_shared_buf_ready = true;
+            dft_shared_buf_head = 0;
+            return;
+        }
+    }
+}
 
 typedef enum {
     PANE_ALBUMS,
     PANE_QUEUE,
+    PANE_VISUAL,
     PANE_COUNT,
 } Pane;
 
@@ -33,6 +54,8 @@ typedef struct {
     Color* album_average_colors;
     Color last_color;
     float last_switch;
+
+    float magnitudes[DFT_SIZE / 2];
 } Wisp;
 
 static float color_luminance(Color c) {
@@ -87,8 +110,8 @@ const float ALBUM_COVER_SIDE_LENGTH = 128;
 static void draw_album_list(const Wisp* w, Rectangle bound);
 static void draw_tracklist(const Wisp* w, Rectangle bound);
 static void draw_queue(const Wisp* w, Rectangle bound);
+static void draw_dft(const Wisp* w, Rectangle bound);
 
-// TODO: Shift colors with the selected albums cover color
 void wisp_draw(const Wisp* w) {
     const float window_w = GetScreenWidth();
     const float window_h = GetScreenHeight();
@@ -97,6 +120,8 @@ void wisp_draw(const Wisp* w) {
     if (t < 0) t = 0;
     if (t > 1) t = 1;
     ClearBackground(ColorLerp(w->last_color, ColorBrightness(w->album_average_colors[w->selected_album], 0.0), t));
+
+    const Theme theme = wisp_derive_theme(w);
 
     switch (w->pane) {
         case PANE_ALBUMS: {
@@ -118,6 +143,28 @@ void wisp_draw(const Wisp* w) {
             draw_queue(w, track_list);
             break;
         }
+        case PANE_VISUAL: {
+            const Rectangle dft_rect = {
+                .x = 0,
+                .y = -window_h,
+                .width = window_w,
+                .height = window_h * 2
+            };
+            if (w->audio.current_track == NULL) break;
+            const char* title = w->audio.current_track->title;
+            const char* album = w->audio.current_track->album;
+            const char* artist = w->audio.current_track->artist;
+            draw_dft(w, dft_rect);
+            const Theme t = wisp_derive_theme(w);
+            DrawTextEx(w->font, title, (Vector2){.x = 8, .y = 8}, 24, 0.0, t.focused_text);
+            DrawTextEx(w->font, album, (Vector2){.x = 8, .y = 40}, 24, 0.0, t.focused_text);
+            DrawTextEx(w->font, artist, (Vector2){.x = 8, .y = 72}, 24, 0.0, t.focused_text);
+
+            DrawTextEx(w->font, title, (Vector2){.x = 8 + 2, .y = 8 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
+            DrawTextEx(w->font, album, (Vector2){.x = 8 + 2, .y = 40 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
+            DrawTextEx(w->font, artist, (Vector2){.x = 8 + 2, .y = 72 + 2}, 24, 0.0, ColorAlpha(t.shadow, -.1));
+            break;
+}
         case PANE_COUNT: assert(false);
     }
     EndDrawing();
@@ -181,6 +228,58 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
     }
 }
 
+static void draw_dft(const Wisp* w, Rectangle bound) {
+    const Theme t = wisp_derive_theme(w);
+
+    #define BARS 128
+
+    for (int i = 0; i < BARS; i++) {
+        float t0 = (float)i / BARS;
+        float t1 = (float)(i + 1) / BARS;
+
+        float min_k = 1.0f;
+        float max_k = DFT_SIZE / 2.0f;
+
+        float log_min = logf(min_k);
+        float log_max = logf(max_k);
+
+        int k0 = expf(log_min + (log_max - log_min) * t0);
+        int k1 = expf(log_min + (log_max - log_min) * t1);
+
+        if (k1 <= k0) k1 = k0 + 1;
+
+        float sum = 0.0f;
+        int count = 0;
+        for (int k = k0; k < k1; k++) {
+            sum += w->magnitudes[k];
+            count++;
+        }
+
+        float mag = (count > 0) ? sum / count : 0.0f;
+        mag = logf(1.0f + mag);
+
+        float h = mag * bound.height / 3.0f;
+
+        float fx0 = bound.x + ((float)i / BARS) * bound.width;
+        float fx1 = bound.x + ((float)(i + 1) / BARS) * bound.width;
+
+        int x0 = (int)fx0;
+        int x1 = (int)fx1;
+
+        if (x1 <= x0) x1 = x0 + 1;
+
+        int width = x1 - x0;
+
+        DrawRectangleGradientV(
+            x0,
+            (int)(bound.y + bound.height - h),
+            width,
+            (int)h,
+            t.unfocused_text,
+            t.rectangle
+        );
+    }
+}
 Theme wisp_derive_theme(const Wisp* w) {
     Color base = w->album_average_colors[w->selected_album];
     float lum = color_luminance(base);
@@ -251,9 +350,55 @@ static void draw_album_list(const Wisp* w, Rectangle bound) {
     EndScissorMode();
 }
 
+typedef struct {
+    float real;
+    float imag;
+} Complex;
+
+void compute_dft(float* in, Complex* out, int N) {
+    for (int k = 0; k < N; k++) {
+        float real = 0.0f;
+        float imag = 0.0f;
+
+        for (int n = 0; n < N; n++) {
+            float angle = 2.0f * PI * k * n / N;
+            real += in[n] * cosf(angle);
+            imag -= in[n] * sinf(angle);
+        }
+
+        out[k].real = real;
+        out[k].imag = imag;
+    }
+}
+
 void wisp_update(Wisp* wisp) {
     const bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+
+
+    if (dft_shared_buf_ready) {
+        dft_shared_buf_ready = 0;
+
+        static Complex out[DFT_SIZE];
+        for (int i = 0; i < DFT_SIZE; i++) {
+            float w = 0.5f * (1.0f - cosf(2.0f * PI * i / (DFT_SIZE - 1)));
+            dft_shared_buf[i] *= w;
+        }
+        compute_dft(dft_shared_buf, out, DFT_SIZE);
+
+        for (int k = 0; k < DFT_SIZE / 2; k++) {
+
+            float mag = sqrtf(out[k].real * out[k].real + out[k].imag * out[k].imag);
+            float db = 20.0f * log10f(mag + 1e-6f);
+            const float min_db = -20.0f;
+            const float max_db = 20.0f;
+
+            float norm = (db - min_db) / (max_db - min_db);
+            if (norm < 0) norm = 0;
+            if (norm > 1) norm = 1;
+            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.6 + norm * 0.4;
+        }
+    }
 
     // screen controls
     {
@@ -351,6 +496,8 @@ void wisp_update(Wisp* wisp) {
     wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * 0.1f;
 }
 
+
+
 Wisp wisp_init(int argc, char** argv) {
     char* prog = argv[0];
     char* home = getenv("HOME");
@@ -366,6 +513,7 @@ Wisp wisp_init(int argc, char** argv) {
     SetWindowState(FLAG_WINDOW_RESIZABLE);
     InitAudioDevice();
     SetTargetFPS(180);
+    AttachAudioMixedProcessor(audio_callback);
 
     Font font = LoadFontEx("res/Iosevka.ttf", 24, NULL, 0);
     SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
@@ -410,3 +558,4 @@ Wisp wisp_init(int argc, char** argv) {
 
     return (Wisp){.font = font, .library = lib, .covers = tex, .album_average_colors = tints};
 }
+
