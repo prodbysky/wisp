@@ -30,6 +30,12 @@ static int compare_track_by_number(const void* a, const void* b) {
     return (*t1)->number - (*t2)->number;
 }
 
+static int compare_album_by_title(const void* a, const void* b) {
+    const Album* const t1 = a;
+    const Album* const t2 = b;
+    return strcmp(t1->name, t2->name);
+}
+
 void mp3_processor(void* user_data, const drmp3_metadata* meta) {
     Track* track = user_data;
     if (meta->type != DRMP3_METADATA_TYPE_ID3V2) {
@@ -146,6 +152,11 @@ Library prepare_library(const char* root_path) {
         qsort(lib.albums.items[i].tracks.items, lib.albums.items[i].tracks.count, sizeof(Track*),
               compare_track_by_number);
     }
+
+        qsort(lib.albums.items, lib.albums.count, sizeof(Album),
+              compare_album_by_title);
+
+
     return lib;
 }
 
