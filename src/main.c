@@ -384,7 +384,7 @@ void wisp_update(Wisp* wisp) {
     const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
 
 
-    if (dft_shared_buf_ready) {
+    if (dft_shared_buf_ready && wisp->pane == PANE_VISUAL) {
         dft_shared_buf_ready = 0;
 
         static Complex out[DFT_SIZE];
