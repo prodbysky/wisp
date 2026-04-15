@@ -131,11 +131,19 @@ void wisp_draw(const Wisp* w) {
             };
             draw_album_list(w, side_bar);
 
+            const Rectangle player_state = {
+                .x = 8,
+                .y = window_h - 136,
+                .width = window_w - 16,
+                .height = 128
+            };
+
             const Rectangle track_list = {.x = 8,
                                           .y = side_bar.height + 8,
                                           .width = window_w,
-                                          .height = window_h - side_bar.height};
+                                          .height = window_h - side_bar.height - player_state.height - 16};
             draw_tracklist(w, track_list);
+            DrawRectangleRounded(player_state, 0.1, 16, ColorAlpha(theme.rectangle, 1.0));
             break;
         }
         case PANE_QUEUE: {
@@ -314,7 +322,7 @@ static void draw_tracklist(const Wisp* w, Rectangle bound) {
         Rectangle rect = {
             .x = bound.x,
             .y = y,
-            .width = GetScreenWidth() - bound.x * 2,
+            .width = bound.width - bound.x * 2,
             .height = font_size + 4,
         };
 
@@ -473,7 +481,7 @@ void wisp_update(Wisp* wisp) {
         const float font_size = 24;
         const float spacing = 8;
         const float item_height = font_size + spacing;
-        const float track_area_height = GetScreenHeight() - ALBUM_COVER_SIDE_LENGTH - 8;
+        const float track_area_height = GetScreenHeight() - 160 - ALBUM_COVER_SIDE_LENGTH - 8;
         const float desired_y_from_top = track_area_height - item_height * 5;
         const float selected_y = wisp->selected_track * item_height;
 
