@@ -31,7 +31,7 @@ void audio_start_playback(Audio* a, Track* track) {
     a->music.looping = false;
     a->current_track = track;
     a->playing = true;
-    a->crossfade_duration = 5.0f;
+    a->crossfade_duration = 2.0f;
 
     PlayMusicStream(a->music);
     SetMusicVolume(a->music, 1.0f);
