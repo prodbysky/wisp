@@ -36,6 +36,12 @@ static int compare_album_by_title(const void* a, const void* b) {
     return strcmp(t1->name, t2->name);
 }
 
+static int compare_artist_by_name(const void* a, const void* b) {
+    const Artist* const t1 = a;
+    const Artist* const t2 = b;
+    return strcmp(t1->name, t2->name);
+}
+
 void mp3_processor(void* user_data, const drmp3_metadata* meta) {
     Track* track = user_data;
     if (meta->type != DRMP3_METADATA_TYPE_ID3V2) {
@@ -134,13 +140,32 @@ Library prepare_library(const char* root_path) {
             }
         }
         if (!found) {
-            *yar_append(&lib.albums) = (Album){
+            Album a = {
                 .name = lib.tracks.items[i].album,
-                .artist = lib.tracks.items[i].artist,
+                .artist = lib.tracks.items[i].artist
             };
+            *yar_append(&a.tracks) = &lib.tracks.items[i];
+            *yar_append(&lib.albums) = a;
         }
     }
 
+    // sort them by artist
+    for (size_t i = 0; i < lib.albums.count; i++) {
+        bool found = false;
+        for (size_t j = 0; j < lib.artists.count; j++) {
+            if (strcmp(lib.albums.items[i].artist, lib.artists.items[j].name) == 0) {
+                *yar_append(&lib.artists.items[j].albums) = &lib.albums.items[i];
+                found = true;
+            }
+        }
+        if (!found) {
+            Artist a = {
+                .name = lib.albums.items[i].artist,
+            };
+            *yar_append(&a.albums) = &lib.albums.items[i];
+            *yar_append(&lib.artists) = a;
+        }
+    }
     // throw away some not needed album covers that are duplicate
     for (size_t i = 0; i < lib.albums.count; i++) {
         uint8_t* first_cover = lib.albums.items[i].tracks.items[0]->cover;
@@ -153,9 +178,11 @@ Library prepare_library(const char* root_path) {
               compare_track_by_number);
     }
 
-        qsort(lib.albums.items, lib.albums.count, sizeof(Album),
-              compare_album_by_title);
+    qsort(lib.albums.items, lib.albums.count, sizeof(Album),
+          compare_album_by_title);
 
+    qsort(lib.artists.items, lib.artists.count, sizeof(Artist),
+          compare_artist_by_name);
 
     return lib;
 }
