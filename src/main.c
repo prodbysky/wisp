@@ -51,13 +51,7 @@ typedef struct {
     float magnitudes[DFT_SIZE / 2];
 } Wisp;
 
-static float color_luminance(Color c) {
-    float r = c.r / 255.0f;
-    float g = c.g / 255.0f;
-    float b = c.b / 255.0f;
-
-    return 0.2126f * r + 0.7152f * g + 0.0722f * b;
-}
+static float color_luminance(Color c);
 
 Wisp wisp_init(int argc, char** argv);
 void wisp_tick(Wisp* wisp);
@@ -100,20 +94,13 @@ const float ALBUM_COVER_SIDE_LENGTH = 128;
 
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_dft(const Wisp* w, Rectangle bound);
-
 static void wisp_next_pane(Wisp* wisp);
 static void wisp_next_loop_mode(Wisp* wisp);
-
 static void wisp_play_selected_track(Wisp* wisp);
-
 static void wisp_queue_album_from_the_selected_track(Wisp* wisp);
-
 static const Album* wisp_get_selected_album(const Wisp* wisp);
-
 static Color wisp_get_lerped_base_color(const Wisp* wisp);
-
 static void prepare_dft_vis(Wisp* wisp);
-
 static void wisp_draw_visual_pane(Wisp* wisp);
 
 void wisp_tick(Wisp* wisp) {
@@ -273,6 +260,76 @@ void wisp_tick(Wisp* wisp) {
     }
 
     EndDrawing();
+}
+
+
+Wisp wisp_init(int argc, char** argv) {
+    char* prog = argv[0]; (void)prog;
+    char* home = getenv("HOME");
+    char default_path[512] = {0};
+    snprintf(default_path, 512, "%s/Music/", home);
+    char* path = default_path;
+    if (argc > 1) path = argv[1];
+    {
+        DIR* d = opendir(path);
+        if (d == NULL) {
+            printf("Failed to open root music library directory (%s): %s\n", path, strerror(errno));
+            exit(1);
+        }
+        closedir(d);
+    }
+    Library lib = prepare_library(path);
+
+    SetWindowState(FLAG_MSAA_4X_HINT);
+    InitWindow(1280, 720, "wispy");
+    SetWindowState(FLAG_WINDOW_ALWAYS_RUN);
+    SetWindowState(FLAG_WINDOW_RESIZABLE);
+    InitAudioDevice();
+    SetTargetFPS(180);
+    AttachAudioMixedProcessor(fill_dft_buffer_callback);
+
+    Font font = LoadFontEx("res/Iosevka.ttf", FONT_SIZE, NULL, 0);
+    SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
+
+    Image* imgs = malloc(lib.albums.count * sizeof(Image));
+    Texture2D* tex = malloc(lib.albums.count * sizeof(Texture2D));
+    Color* tints = malloc(lib.albums.count * sizeof(Color));
+
+    for (size_t i = 0; i < lib.albums.count; i++) {
+        float r = 0, g = 0, b = 0;
+        Track* t = lib.albums.items[i].tracks.items[0];
+        imgs[i] = (Image){
+            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+            .width = t->cover_w,
+            .height = t->cover_h,
+            .data = t->cover,
+            .mipmaps = 1,
+        };
+        int sample_count = 10;
+        int count = 0;
+        for (int y = 0; y < t->cover_h; y += sample_count) {
+            for (int x = 0; x < t->cover_w; x += sample_count) {
+                size_t i = (y * t->cover_w + x) * 3;
+                r += (float)t->cover[i] / 255;
+                g += (float)t->cover[i + 1] / 255;
+                b += (float)t->cover[i + 2] / 255;
+                count++;
+            }
+        }
+        r /= (float)count;
+        g /= (float)count;
+        b /= (float)count;
+        r *= 255;
+        g *= 255;
+        b *= 255;
+        tints[i].r = r;
+        tints[i].g = g;
+        tints[i].b = b;
+        tints[i].a = 1;
+        tex[i] = LoadTextureFromImage(imgs[i]);
+    }
+
+    return (Wisp){.font = font, .library = lib, .covers = tex, .album_average_colors = tints, .main_pane = MP_ALBUM, .pane = PANE_MAIN};
 }
 
 static void wisp_draw_visual_pane(Wisp* wisp) {
@@ -482,72 +539,11 @@ Theme wisp_derive_theme(const Wisp* w) {
 }
 
 
-Wisp wisp_init(int argc, char** argv) {
-    char* prog = argv[0]; (void)prog;
-    char* home = getenv("HOME");
-    char default_path[512] = {0};
-    snprintf(default_path, 512, "%s/Music/", home);
-    char* path = default_path;
-    if (argc > 1) path = argv[1];
-    {
-        DIR* d = opendir(path);
-        if (d == NULL) {
-            printf("Failed to open root music library directory (%s): %s\n", path, strerror(errno));
-            exit(1);
-        }
-        closedir(d);
-    }
-    Library lib = prepare_library(path);
 
-    SetWindowState(FLAG_MSAA_4X_HINT);
-    InitWindow(1280, 720, "wispy");
-    SetWindowState(FLAG_WINDOW_ALWAYS_RUN);
-    SetWindowState(FLAG_WINDOW_RESIZABLE);
-    InitAudioDevice();
-    SetTargetFPS(180);
-    AttachAudioMixedProcessor(fill_dft_buffer_callback);
+static float color_luminance(Color c) {
+    float r = c.r / 255.0f;
+    float g = c.g / 255.0f;
+    float b = c.b / 255.0f;
 
-    Font font = LoadFontEx("res/Iosevka.ttf", FONT_SIZE, NULL, 0);
-    SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
-
-    Image* imgs = malloc(lib.albums.count * sizeof(Image));
-    Texture2D* tex = malloc(lib.albums.count * sizeof(Texture2D));
-    Color* tints = malloc(lib.albums.count * sizeof(Color));
-
-    for (size_t i = 0; i < lib.albums.count; i++) {
-        float r = 0, g = 0, b = 0;
-        Track* t = lib.albums.items[i].tracks.items[0];
-        imgs[i] = (Image){
-            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
-            .width = t->cover_w,
-            .height = t->cover_h,
-            .data = t->cover,
-            .mipmaps = 1,
-        };
-        int sample_count = 10;
-        int count = 0;
-        for (int y = 0; y < t->cover_h; y += sample_count) {
-            for (int x = 0; x < t->cover_w; x += sample_count) {
-                size_t i = (y * t->cover_w + x) * 3;
-                r += (float)t->cover[i] / 255;
-                g += (float)t->cover[i + 1] / 255;
-                b += (float)t->cover[i + 2] / 255;
-                count++;
-            }
-        }
-        r /= (float)count;
-        g /= (float)count;
-        b /= (float)count;
-        r *= 255;
-        g *= 255;
-        b *= 255;
-        tints[i].r = r;
-        tints[i].g = g;
-        tints[i].b = b;
-        tints[i].a = 1;
-        tex[i] = LoadTextureFromImage(imgs[i]);
-    }
-
-    return (Wisp){.font = font, .library = lib, .covers = tex, .album_average_colors = tints, .main_pane = MP_ALBUM, .pane = PANE_MAIN};
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b;
 }
-
