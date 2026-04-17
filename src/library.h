@@ -27,12 +27,19 @@ typedef struct {
     yar(Track*) tracks;
 } Album;
 
+typedef struct {
+    char* name;
+    yar(Album*) albums;
+} Artist;
+
 typedef yar(Track) Tracks;
 typedef yar(Album) Albums;
+typedef yar(Artist) Artists;
 
 typedef struct {
     Tracks tracks;
     Albums albums;
+    Artists artists;
     Paths ps;
 } Library;
 
