@@ -16,7 +16,7 @@ static volatile bool dft_shared_buf_ready = false;
 void fill_dft_buffer_callback(void* samples, uint32_t n_samples) {
     float* s = (float*)samples;
 
-    for (int i = 0; i < n_samples; i++) {
+    for (uint32_t i = 0; i < n_samples; i++) {
         float l = s[i*2];
         float r = s[i*2+1];
         dft_shared_buf[dft_shared_buf_head++] = fabsf(l) > fabsf(r) ? l : r;
