@@ -6,6 +6,7 @@
 #include <math.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 
 #include "audio.h"
 #include "library.h"
@@ -27,6 +28,16 @@ typedef enum {
 } MainPane;
 
 typedef struct {
+    char* program_name;
+    char* custom_root_path;
+    bool help;
+} CliConfig;
+
+bool cli_config_parse(int* argc, char*** argv, CliConfig* cc);
+void help_and_exit(const CliConfig* cfg);
+
+typedef struct {
+    CliConfig cli_config;
     Library library;
     Font font;
     Texture2D* covers;
@@ -263,22 +274,28 @@ void wisp_tick(Wisp* wisp) {
 }
 
 
+
 Wisp wisp_init(int argc, char** argv) {
-    char* prog = argv[0]; (void)prog;
-    char* home = getenv("HOME");
-    char default_path[512] = {0};
-    snprintf(default_path, 512, "%s/Music/", home);
-    char* path = default_path;
-    if (argc > 1) path = argv[1];
+    CliConfig cfg = {0};
+    if (!cli_config_parse(&argc, &argv, &cfg)) {
+        printf("ERROR: Failed to parse cli args\n");
+        help_and_exit(&cfg);
+        exit(1);
+    }
+    if (cfg.custom_root_path == NULL) {
+        char* home = getenv("HOME");
+        char default_path[512] = {0};
+        snprintf(default_path, 512, "%s/Music/", home);
+    }
     {
-        DIR* d = opendir(path);
+        DIR* d = opendir(cfg.custom_root_path);
         if (d == NULL) {
-            printf("Failed to open root music library directory (%s): %s\n", path, strerror(errno));
+            printf("Failed to open root music library directory (%s): %s\n", cfg.custom_root_path, strerror(errno));
             exit(1);
         }
         closedir(d);
     }
-    Library lib = prepare_library(path);
+    Library lib = prepare_library(cfg.custom_root_path);
 
     SetWindowState(FLAG_MSAA_4X_HINT);
     InitWindow(1280, 720, "wispy");
@@ -330,6 +347,45 @@ Wisp wisp_init(int argc, char** argv) {
     }
 
     return (Wisp){.font = font, .library = lib, .covers = tex, .album_average_colors = tints, .main_pane = MP_ALBUM, .pane = PANE_MAIN};
+}
+
+bool cli_config_parse(int* argc, char*** argv, CliConfig* cc) {
+    cc->program_name = **argv;
+    if (*argc == 1) {
+        return true;
+    }
+    (*argc)--;
+    (*argv)++;
+    while (*argc != 0 && **argv != NULL) {
+        if (strcmp(**argv, "--help") == 0) {
+            cc->help = true;
+            return true;
+        } else if (strcmp(**argv, "--path") == 0) {
+            if (cc->custom_root_path != NULL) {
+                printf("ERROR: Flag `--path` can only be provided once\n");
+                return false;
+            }
+            if (*argc < 2) {
+                printf("ERROR: Flag `--path` requires a path (absolute) but it was not provided\n");
+                return false;
+            }
+            cc->custom_root_path = *((*argv) + 1);
+            *argv += 2;
+            (*argc) -= 2;
+        } else {
+            printf("ERROR: Unknown flag `%s`\n", **argv);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void help_and_exit(const CliConfig* cfg) {
+    printf("USAGE:\n");
+    printf("  %s [FLAGS]\n", cfg->program_name);
+    printf("  --help      : show this help message\n");
+    printf("  --path <DIR>: set custom music library path\n");
 }
 
 static void wisp_draw_visual_pane(Wisp* wisp) {
