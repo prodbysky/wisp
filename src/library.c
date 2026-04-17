@@ -137,6 +137,7 @@ Library prepare_library(const char* root_path) {
             if (strcmp(lib.tracks.items[i].album, lib.albums.items[j].name) == 0) {
                 *yar_append(&lib.albums.items[j].tracks) = &lib.tracks.items[i];
                 found = true;
+                break;
             }
         }
         if (!found) {
@@ -156,6 +157,7 @@ Library prepare_library(const char* root_path) {
             if (strcmp(lib.albums.items[i].artist, lib.artists.items[j].name) == 0) {
                 *yar_append(&lib.artists.items[j].albums) = &lib.albums.items[i];
                 found = true;
+                break;
             }
         }
         if (!found) {
