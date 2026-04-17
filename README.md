@@ -17,14 +17,19 @@ By default wisp assumes $(HOME)/Music is where your music is stored.
 If you desire to put it else where pass the path (where your music is) as the first argument to wisp.
 
 ### Keybinds
- - `h`       - move album select head to the left
- - `l`       - move album select head to the right
- - `j`       - select next track within album
- - `k`       - select previous track within album
- - `enter`   - play the selected track
- - `q`       - enqueue the selected track
- - `Shift-q` - enqueue the selected albums tracks from the selected track onwards
- - `Tab`     - open other pane (if on albums view opens queue, and vice-versa)
- - `Space`   - pause/unpause
- - `left`    - seek backwards by 5 sec.
- - `right`   - seek forwards by 5 sec.
+ - `h`       : move back to the album select column
+ - `j`       : move down in the current column
+ - `k`       : move up in the current column
+ - `l`       : move to the track select column
+ - `return`  : play the selected track
+ - `q`       : queue the selected track
+ - `S-q`     : queue the selected album from the current selected track
+ - `tab`     : switch to next pane (main->queue->dft)
+ - `space`   : toggle playing state
+ - `.`       : skip current track forward
+ - `,`       : skip current track backward
+ - `>`       : seek playing track forwards by 5 seconds
+ - `<`       : seek playing track backward by 5 seconds
+ - `C-s`     : enable shuffling
+ - `C-r`     : cycle loop mode
+

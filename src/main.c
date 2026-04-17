@@ -133,8 +133,8 @@ void wisp_tick(Wisp* wisp) {
         if (IsKeyPressed(KEY_PERIOD) && shift) audio_skip_track_forward(&wisp->audio);
         if (IsKeyPressed(KEY_COMMA) && shift)  audio_skip_track_backward(&wisp->audio); 
 
-        if (IsKeyPressed(KEY_RIGHT)) audio_try_seeking_by(&wisp->audio, 5.0);
-        if (IsKeyPressed(KEY_LEFT)) audio_try_seeking_by(&wisp->audio, -5.0);
+        if (IsKeyPressed(KEY_PERIOD) && !shift) audio_try_seeking_by(&wisp->audio, 5.0);
+        if (IsKeyPressed(KEY_COMMA) && !shift) audio_try_seeking_by(&wisp->audio, -5.0);
 
         if (IsKeyPressed(KEY_S) && ctrl)  wisp->audio.shuffle = !wisp->audio.shuffle; 
         if (IsKeyPressed(KEY_R) && ctrl) wisp_next_loop_mode(wisp);
@@ -194,7 +194,11 @@ void wisp_tick(Wisp* wisp) {
 
         if (IsKeyPressed(KEY_ENTER)) wisp_play_selected_track(wisp);
 
-        if (IsKeyPressed(KEY_Q)) wisp_queue_album_from_the_selected_track(wisp);
+        if (shift && IsKeyPressed(KEY_Q)) wisp_queue_album_from_the_selected_track(wisp);
+        if (IsKeyPressed(KEY_Q)) {
+            Track* t = wisp->library.albums.items[wisp->selected_album].tracks.items[wisp->selected_track];
+            audio_enqueue_single(&wisp->audio, t);
+        }
         const float entry_height = FONT_SIZE + BORDER_PAD + 64;
 
         const float top_bound = wisp->actual_album_offset + entry_height;
