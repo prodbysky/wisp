@@ -489,10 +489,13 @@ Wisp wisp_init(int argc, char** argv) {
     snprintf(default_path, 512, "%s/Music/", home);
     char* path = default_path;
     if (argc > 1) path = argv[1];
-    DIR* d = opendir(path);
-    if (d == NULL) {
-        printf("Failed to open root music library directory (%s): %s\n", path, strerror(errno));
-        exit(0);
+    {
+        DIR* d = opendir(path);
+        if (d == NULL) {
+            printf("Failed to open root music library directory (%s): %s\n", path, strerror(errno));
+            exit(1);
+        }
+        closedir(d);
     }
     Library lib = prepare_library(path);
 
