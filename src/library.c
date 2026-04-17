@@ -150,6 +150,9 @@ Library prepare_library(const char* root_path) {
         }
     }
 
+    qsort(lib.albums.items, lib.albums.count, sizeof(Album),
+          compare_album_by_title);
+
     // sort them by artist
     for (size_t i = 0; i < lib.albums.count; i++) {
         bool found = false;
@@ -180,8 +183,6 @@ Library prepare_library(const char* root_path) {
               compare_track_by_number);
     }
 
-    qsort(lib.albums.items, lib.albums.count, sizeof(Album),
-          compare_album_by_title);
 
     qsort(lib.artists.items, lib.artists.count, sizeof(Artist),
           compare_artist_by_name);
