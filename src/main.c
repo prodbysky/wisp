@@ -17,6 +17,7 @@
 
 typedef enum {
     PANE_MAIN,
+    PANE_PLAYLISTS,
     PANE_QUEUE,
     PANE_VISUAL,
     PANE_COUNT,
@@ -36,6 +37,13 @@ typedef struct {
 bool config_parse_args(int* argc, char*** argv, Config* cc);
 bool config_parse_file(const char* path, Config* cc);
 void help_and_exit(const Config* cfg);
+
+
+// custom playlist covers?
+typedef struct {
+    yar(Track*) tracks;
+    char* name; // #PLAYLIST:<x>
+} Playlist;
 
 typedef struct {
     Config cli_config;
@@ -257,6 +265,9 @@ void wisp_tick(Wisp* wisp) {
                     }
                     EndScissorMode();
                 }
+            break;
+        }
+        case PANE_PLAYLISTS: {
             break;
         }
         case PANE_QUEUE: {
