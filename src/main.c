@@ -625,8 +625,8 @@ static void draw_dft(const Wisp* w, Rectangle bound) {
             (int)(bound.y + bound.height - h),
             width,
             (int)h,
-            ColorAlpha(t.rectangle, 0),
-            t.unfocused_text
+            ColorAlpha(t.rectangle, -0.2),
+            ColorAlpha(t.rectangle, 1)
         );
     }
 }
