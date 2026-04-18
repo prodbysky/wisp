@@ -16,6 +16,15 @@ most linux players suck, tauon is slow, strawberry uses QT, VLC feels bad to use
 By default wisp assumes $(HOME)/Music is where your music is stored.
 If you desire to put it else where pass the path (where your music is) as the first argument to wisp.
 
+## Config
+Wisp will search for its .conf file in $(HOME)/.config/wisp.conf
+The config is line based. And for now it only can configure your music root path.
+To specify it:
+wisp.conf
+```
+library_path /home/shr/Downloaded
+```
+
 ### Keybinds
  - `h`       : move back to the album select column
  - `j`       : move down in the current column
