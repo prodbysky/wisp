@@ -31,13 +31,14 @@ typedef struct {
     char* program_name;
     char* custom_root_path;
     bool help;
-} CliConfig;
+} Config;
 
-bool cli_config_parse(int* argc, char*** argv, CliConfig* cc);
-void help_and_exit(const CliConfig* cfg);
+bool config_parse_args(int* argc, char*** argv, Config* cc);
+bool config_parse_file(const char* path, Config* cc);
+void help_and_exit(const Config* cfg);
 
 typedef struct {
-    CliConfig cli_config;
+    Config cli_config;
     Library library;
     Font font;
     Texture2D* covers;
@@ -276,17 +277,27 @@ void wisp_tick(Wisp* wisp) {
 
 
 Wisp wisp_init(int argc, char** argv) {
-    CliConfig cfg = {0};
-    if (!cli_config_parse(&argc, &argv, &cfg)) {
+    Config cfg = {0};
+    if (!config_parse_args(&argc, &argv, &cfg)) {
         printf("ERROR: Failed to parse cli args\n");
         help_and_exit(&cfg);
         exit(1);
     }
-    if (cfg.custom_root_path == NULL) {
-        char* home = getenv("HOME");
-        char default_path[512] = {0};
-        snprintf(default_path, 512, "%s/Music/", home);
+    char* home_path = getenv("HOME");
+
+    Config pre_file = cfg;
+    char config_path[512];
+    snprintf(config_path, 512, "%s/.config/wisp.conf", home_path);
+    if (!config_parse_file(config_path, &cfg)) {
+        printf("ERROR: Failed to parse your config\n");
+        cfg = pre_file;
     }
+
+    if (cfg.custom_root_path == NULL) {
+        char default_path[512] = {0};
+        snprintf(default_path, 512, "%s/Music/", home_path);
+    }
+
     {
         DIR* d = opendir(cfg.custom_root_path);
         if (d == NULL) {
@@ -349,7 +360,7 @@ Wisp wisp_init(int argc, char** argv) {
     return (Wisp){.font = font, .library = lib, .covers = tex, .album_average_colors = tints, .main_pane = MP_ALBUM, .pane = PANE_MAIN};
 }
 
-bool cli_config_parse(int* argc, char*** argv, CliConfig* cc) {
+bool config_parse_args(int* argc, char*** argv, Config* cc) {
     cc->program_name = **argv;
     if (*argc == 1) {
         return true;
@@ -381,7 +392,48 @@ bool cli_config_parse(int* argc, char*** argv, CliConfig* cc) {
     return true;
 }
 
-void help_and_exit(const CliConfig* cfg) {
+bool config_parse_file(const char* path, Config* cc) {
+    FILE* file = fopen(path, "r");
+    if (!file) {
+        printf("ERROR: couldn't open config file %s\n", path);
+        return false;
+    }
+
+    char line[1024];
+
+    while (fgets(line, sizeof(line), file)) {
+        line[strcspn(line, "\n")] = '\0';
+
+        if (line[0] == '\0') continue;
+
+        if (strncmp(line, "library_path", 12) == 0) {
+            char* value = line + 12;
+
+            while (*value == ' ') value++;
+
+            char* end = value + strlen(value) - 1;
+            while (end > value && (*end == ' ' || *end == '\t')) {
+                *end-- = '\0';
+            }
+
+            cc->custom_root_path = strdup(value);
+            if (!cc->custom_root_path) {
+                printf("ERROR: allocation failed\n");
+                fclose(file);
+                return false;
+            }
+        } else {
+            printf("ERROR: Unknown config line: %s\n", line);
+            fclose(file);
+            return false;
+        }
+    }
+
+    fclose(file);
+    return true;
+}
+
+void help_and_exit(const Config* cfg) {
     printf("USAGE:\n");
     printf("  %s [FLAGS]\n", cfg->program_name);
     printf("  --help      : show this help message\n");
