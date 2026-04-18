@@ -3,7 +3,6 @@
 #include "nob.h"
 
 static bool build_deps();
-
 static void common_flags(Cmd* c);
 
 int main(int argc, char** argv) {
@@ -16,9 +15,22 @@ int main(int argc, char** argv) {
         if (!cmd_run(&c)) return 1;
     }
 
-    cmd_append(&c, "gcc", "build/yar.o", "src/main.c", "src/library.c", "src/audio.c", "-o", "build/wisp", "-lm", "-Lextern/raylib/src/", "-l:libraylib.a", "-lX11", "-lFLAC");
+    cmd_append(&c,
+               "gcc",
+               "build/yar.o",
+               "src/main.c",
+               "src/library.c",
+               "src/audio.c",
+               "src/playlist.c",
+               "-o", "build/wisp",
+               "-lm",
+               "-Lextern/raylib/src/",
+               "-l:libraylib.a",
+               "-lX11",
+               "-lFLAC");
     common_flags(&c);
     if (!cmd_run(&c)) return 1;
+    return 0;
 }
 
 static bool build_deps() {
