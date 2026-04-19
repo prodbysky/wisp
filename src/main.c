@@ -8,19 +8,12 @@
 #include <string.h>
 #include <time.h>
 
+#include "config.h"
 #include "audio.h"
 #include "fft.h"
 #include "library.h"
 #include "playlist.h"
 
-#define FONT_SIZE 24
-#define BARS 512
-
-#define PANEL_COLOR GetColor(0x333333ff)
-#define SHADOW_COLOR GetColor(0x00000077)
-#define BACKGROUND_COLOR GetColor(0x181818ff)
-#define FOCUSED_TEXT_COLOR GetColor(0xccccccff)
-#define UNFOCUSED_TEXT_COLOR GetColor(0x888888ff)
 
 typedef enum {
     PANE_MAIN,
@@ -349,10 +342,10 @@ void wisp_tick(Wisp* wisp) {
         }
     }
 
-    wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * 0.15f;
-    wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * 0.15f;
-    wisp->pl_list_offset += (wisp->pl_list_wanted_offset - wisp->pl_list_offset) * 0.15f;
-    wisp->pl_track_scroll += (wisp->pl_track_wanted_scroll - wisp->pl_track_scroll) * 0.15f;
+    wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * SCROLL_SMOOTH;
+    wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * SCROLL_SMOOTH;
+    wisp->pl_list_offset += (wisp->pl_list_wanted_offset - wisp->pl_list_offset) * SCROLL_SMOOTH;
+    wisp->pl_track_scroll += (wisp->pl_track_wanted_scroll - wisp->pl_track_scroll) * SCROLL_SMOOTH;
 
 draw:
     prepare_fft_vis(wisp);
@@ -370,7 +363,7 @@ draw:
                     const Color text_color =
                         focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
                     const Rectangle bg_rect = {cursor.x - 2, cursor.y, WW / 3 - BORDER_PAD * 2, FONT_SIZE + 4 + 64};
-                    const Color bg_color = focused ? ColorBrightness(PANEL_COLOR, 0.5f) : PANEL_COLOR;
+                    const Color bg_color = focused ? UNFOCUSED_PANEL_COLOR : FOCUSED_PANEL_COLOR;
                     const Rectangle cover_src = {0, 0, (float)wisp->covers[ai].width, (float)wisp->covers[ai].height};
                     const Rectangle cover_dst = {BORDER_PAD + BORDER_PAD / 2, cursor.y + 14, 64, 64};
                     DrawRectangleRounded(bg_rect, 0.25f, 16, bg_color);
@@ -391,7 +384,7 @@ draw:
                     const Color text_color =
                         focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
                     const Rectangle bg_rect = {cursor.x - 2, cursor.y, 2 * (WW / 3) - BORDER_PAD * 2, FONT_SIZE + 4};
-                    DrawRectangleRounded(bg_rect, 0.25f, 16, PANEL_COLOR);
+                    DrawRectangleRounded(bg_rect, 0.25f, 16, FOCUSED_PANEL_COLOR);
                     DrawTextPro(wisp->font, wisp_get_selected_album(wisp)->tracks.items[ti]->title, cursor,
                                 (Vector2){-3, -3}, 0, FONT_SIZE, 0, SHADOW_COLOR);
                     DrawTextPro(wisp->font, wisp_get_selected_album(wisp)->tracks.items[ti]->title, cursor,
@@ -479,6 +472,7 @@ Wisp wisp_init(int argc, char** argv) {
             .data = t->cover,
             .mipmaps = 1,
         };
+        tex[i] = LoadTextureFromImage(img);
     }
 
     char* pl_dir = playlist_dir_path(cfg.custom_playlist_dir);
@@ -670,12 +664,12 @@ static void wisp_draw_overlay(Wisp* wisp) {
 
     if (wisp->overlay.mode == OVERLAY_PLAYLIST_NEW) {
         const float box_h = line_h * 3.0f;
-        DrawRectangleRounded((Rectangle){box_x, box_y, box_w, box_h}, 0.12f, 16, ColorBrightness(PANEL_COLOR, 0.3f));
+        DrawRectangleRounded((Rectangle){box_x, box_y, box_w, box_h}, 0.12f, 16, UNFOCUSED_PANEL_COLOR);
 
         DrawTextEx(wisp->font, "New playlist name:", (Vector2){box_x + 12, box_y + 8}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
 
         DrawRectangleRounded((Rectangle){box_x + 8, box_y + line_h + 4, box_w - 16, line_h}, 0.2f, 16,
-                             ColorBrightness(PANEL_COLOR, -0.3f));
+                             UNFOCUSED_PANEL_COLOR);
         DrawTextEx(wisp->font, wisp->overlay.buf, (Vector2){box_x + 16, box_y + line_h + 8}, FONT_SIZE, 0,
                    FOCUSED_TEXT_COLOR);
 
@@ -696,10 +690,10 @@ static void wisp_draw_overlay(Wisp* wisp) {
 
     const float box_h = line_h * (visible + 2.5f);
 
-    DrawRectangleRounded((Rectangle){box_x, box_y, box_w, box_h}, 0.08f, 16, ColorBrightness(PANEL_COLOR, 0.3f));
+    DrawRectangleRounded((Rectangle){box_x, box_y, box_w, box_h}, 0.08f, 16, UNFOCUSED_PANEL_COLOR);
 
     DrawRectangleRounded((Rectangle){box_x + 8, box_y + 6, box_w - 16, line_h}, 0.2f, 16,
-                         ColorBrightness(PANEL_COLOR, -0.3f));
+                         UNFOCUSED_PANEL_COLOR);
     const char* placeholder = "Search playlist…";
     const char* search_text = wisp->overlay.buf_len > 0 ? wisp->overlay.buf : placeholder;
     Color search_col = wisp->overlay.buf_len > 0 ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
@@ -717,9 +711,10 @@ static void wisp_draw_overlay(Wisp* wisp) {
         for (size_t i = 0; i < (size_t)max_visible && i < wisp->overlay.filtered_count; i++) {
             size_t pi = wisp->overlay.filtered_indices[i];
             const bool sel = (i == wisp->overlay.selected);
+            Color rect_color = sel ? FOCUSED_PANEL_COLOR : UNFOCUSED_PANEL_COLOR;
             if (sel)
                 DrawRectangleRounded((Rectangle){box_x + 4, ry, box_w - 8, line_h}, 0.2f, 16,
-                                     ColorBrightness(PANEL_COLOR, sel ? 0.5f : 0.0f));
+                                     rect_color);
             Color tc = sel ? UNFOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
             DrawTextEx(wisp->font, wisp->playlists.items[pi].name, (Vector2){box_x + 16, ry + 4}, FONT_SIZE, 0, tc);
             ry += line_h;
@@ -748,7 +743,7 @@ static void wisp_draw_playlist_pane(Wisp* wisp) {
         for (size_t pi = 0; pi < wisp->playlists.count; pi++) {
             const bool focused = (pi == wisp->pl_selected_playlist);
             const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-            const Color bg_color = focused ? ColorBrightness(PANEL_COLOR, 0.5f) : PANEL_COLOR;
+            const Color bg_color = focused ? UNFOCUSED_PANEL_COLOR : FOCUSED_PANEL_COLOR;
             const Rectangle bg = {cursor.x - 2, cursor.y, WW / 3 - BORDER_PAD * 2, FONT_SIZE + 4};
             DrawRectangleRounded(bg, 0.25f, 16, bg_color);
             DrawTextPro(wisp->font, wisp->playlists.items[pi].name, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
@@ -773,7 +768,7 @@ static void wisp_draw_playlist_pane(Wisp* wisp) {
             const bool focused = (ti == wisp->pl_selected_track && wisp->pl_pane == MP_TRACK);
             const Color tc = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
             const Rectangle bg = {cursor.x - 2, cursor.y, 2 * (WW / 3) - BORDER_PAD * 2, FONT_SIZE + 4};
-            DrawRectangleRounded(bg, 0.25f, 16, PANEL_COLOR);
+            DrawRectangleRounded(bg, 0.25f, 16, FOCUSED_PANEL_COLOR);
             DrawTextPro(wisp->font, pl->tracks.items[ti]->title, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
                         SHADOW_COLOR);
             DrawTextPro(wisp->font, pl->tracks.items[ti]->title, cursor, (Vector2){-2, -2}, 0, FONT_SIZE, 0, tc);
@@ -846,7 +841,7 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
 
     if (w->audio.current_track) {
         Rectangle rect = {bound.x, center_y, (float)GetScreenWidth() - bound.x * 2, FONT_SIZE + 4};
-        DrawRectangleRounded(rect, 0.25f, 17, PANEL_COLOR);
+        DrawRectangleRounded(rect, 0.25f, 17, FOCUSED_PANEL_COLOR);
         DrawTextEx(w->font, w->audio.current_track->title, (Vector2){bound.x + 5, center_y + 3}, FONT_SIZE, 0,
                    FOCUSED_TEXT_COLOR);
     }
@@ -855,7 +850,7 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
         size_t idx = w->audio.queue.history.items.count - 1 - i;
         float y = center_y - item_height * (float)(i + 1);
         Rectangle rect = {bound.x, y, (float)GetScreenWidth() - bound.x * 2, FONT_SIZE + 4};
-        DrawRectangleRounded(rect, 0.25f, 17, PANEL_COLOR);
+        DrawRectangleRounded(rect, 0.25f, 17, FOCUSED_PANEL_COLOR);
         DrawTextEx(w->font, w->audio.queue.history.items.items[idx]->title, (Vector2){bound.x + 5, y + 3}, FONT_SIZE, 0,
                    ColorBrightness(FOCUSED_TEXT_COLOR, -0.2f));
     }
@@ -863,7 +858,7 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
     for (size_t i = 0; i < w->audio.queue.upcoming.items.count; i++) {
         float y = center_y + item_height * (float)(i + 1);
         Rectangle rect = {bound.x, y, (float)GetScreenWidth() - bound.x * 2, FONT_SIZE + 4};
-        DrawRectangleRounded(rect, 0.25f, 17, PANEL_COLOR);
+        DrawRectangleRounded(rect, 0.25f, 17, FOCUSED_PANEL_COLOR);
         DrawTextEx(w->font, w->audio.queue.upcoming.items.items[i]->title, (Vector2){bound.x + 5, y + 3}, FONT_SIZE, 0,
                    ColorBrightness(FOCUSED_TEXT_COLOR, -0.2f));
     }

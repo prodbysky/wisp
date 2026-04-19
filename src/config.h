@@ -1,0 +1,11 @@
+#define FONT_SIZE 24
+#define BARS 512
+
+#define SCROLL_SMOOTH 0.15
+
+#define FOCUSED_PANEL_COLOR GetColor(0x333333ff)
+#define UNFOCUSED_PANEL_COLOR GetColor(0x222222ff)
+#define SHADOW_COLOR GetColor(0x00000077)
+#define BACKGROUND_COLOR GetColor(0x181818ff)
+#define FOCUSED_TEXT_COLOR GetColor(0xccccccff)
+#define UNFOCUSED_TEXT_COLOR GetColor(0x888888ff)
