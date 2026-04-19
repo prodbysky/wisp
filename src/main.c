@@ -8,12 +8,11 @@
 #include <string.h>
 #include <time.h>
 
-#include "config.h"
 #include "audio.h"
+#include "config.h"
 #include "fft.h"
 #include "library.h"
 #include "playlist.h"
-
 
 typedef enum {
     PANE_MAIN,
@@ -200,14 +199,10 @@ void wisp_tick(Wisp* wisp) {
         if (wisp->pane == PANE_MAIN) {
             if (wisp->main_pane == MP_ALBUM) {
                 if (IsKeyPressed(KEY_J)) {
-                    if (wisp->selected_album < wisp->library.albums.count - 1) {
-                        wisp->selected_album++;
-                    }
+                    if (wisp->selected_album < wisp->library.albums.count - 1) { wisp->selected_album++; }
                 }
                 if (IsKeyPressed(KEY_K)) {
-                    if (wisp->selected_album > 0) {
-                        wisp->selected_album--;
-                    }
+                    if (wisp->selected_album > 0) { wisp->selected_album--; }
                 }
                 if (IsKeyPressed(KEY_L)) {
                     wisp->main_pane = MP_TRACK;
@@ -360,8 +355,7 @@ draw:
                 Vector2 cursor = {BORDER_PAD, BORDER_PAD - wisp->actual_album_offset - (FONT_SIZE + 64)};
                 for (size_t ai = 0; ai < wisp->library.albums.count; ai++) {
                     const bool focused = (ai == wisp->selected_album);
-                    const Color text_color =
-                        focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
+                    const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
                     const Rectangle bg_rect = {cursor.x - 2, cursor.y, WW / 3 - BORDER_PAD * 2, FONT_SIZE + 4 + 64};
                     const Color bg_color = focused ? UNFOCUSED_PANEL_COLOR : FOCUSED_PANEL_COLOR;
                     const Rectangle cover_src = {0, 0, (float)wisp->covers[ai].width, (float)wisp->covers[ai].height};
@@ -381,8 +375,7 @@ draw:
                 BeginScissorMode((int)(cursor.x - 3 * BORDER_PAD), 0, (int)((WW * 2) / 3 + BORDER_PAD), (int)WH);
                 for (size_t ti = 0; ti < wisp_get_selected_album(wisp)->tracks.count; ti++) {
                     const bool focused = (ti == wisp->selected_track);
-                    const Color text_color =
-                        focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
+                    const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
                     const Rectangle bg_rect = {cursor.x - 2, cursor.y, 2 * (WW / 3) - BORDER_PAD * 2, FONT_SIZE + 4};
                     DrawRectangleRounded(bg_rect, RECTANGLE_ROUNDNESS, 16, FOCUSED_PANEL_COLOR);
                     DrawTextPro(wisp->font, wisp_get_selected_album(wisp)->tracks.items[ti]->title, cursor,
@@ -666,7 +659,8 @@ static void wisp_draw_overlay(Wisp* wisp) {
         const float box_h = line_h * 3.0f;
         DrawRectangleRounded((Rectangle){box_x, box_y, box_w, box_h}, RECTANGLE_ROUNDNESS, 16, UNFOCUSED_PANEL_COLOR);
 
-        DrawTextEx(wisp->font, "New playlist name:", (Vector2){box_x + 12, box_y + 8}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
+        DrawTextEx(wisp->font, "New playlist name:", (Vector2){box_x + 12, box_y + 8}, FONT_SIZE, 0,
+                   FOCUSED_TEXT_COLOR);
 
         DrawRectangleRounded((Rectangle){box_x + 8, box_y + line_h + 4, box_w - 16, line_h}, RECTANGLE_ROUNDNESS, 16,
                              UNFOCUSED_PANEL_COLOR);
@@ -705,8 +699,7 @@ static void wisp_draw_overlay(Wisp* wisp) {
 
     float ry = box_y + line_h + 8;
     if (wisp->overlay.filtered_count == 0) {
-        DrawTextEx(wisp->font, "No playlists found.", (Vector2){box_x + 16, ry + 4}, FONT_SIZE, 0,
-                   FOCUSED_TEXT_COLOR);
+        DrawTextEx(wisp->font, "No playlists found.", (Vector2){box_x + 16, ry + 4}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
     } else {
         for (size_t i = 0; i < (size_t)max_visible && i < wisp->overlay.filtered_count; i++) {
             size_t pi = wisp->overlay.filtered_indices[i];
