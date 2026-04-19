@@ -141,17 +141,13 @@ Library prepare_library(const char* root_path) {
             }
         }
         if (!found) {
-            Album a = {
-                .name = lib.tracks.items[i].album,
-                .artist = lib.tracks.items[i].artist
-            };
+            Album a = {.name = lib.tracks.items[i].album, .artist = lib.tracks.items[i].artist};
             *yar_append(&a.tracks) = &lib.tracks.items[i];
             *yar_append(&lib.albums) = a;
         }
     }
 
-    qsort(lib.albums.items, lib.albums.count, sizeof(Album),
-          compare_album_by_title);
+    qsort(lib.albums.items, lib.albums.count, sizeof(Album), compare_album_by_title);
 
     // sort them by artist
     for (size_t i = 0; i < lib.albums.count; i++) {
@@ -183,9 +179,7 @@ Library prepare_library(const char* root_path) {
               compare_track_by_number);
     }
 
-
-    qsort(lib.artists.items, lib.artists.count, sizeof(Artist),
-          compare_artist_by_name);
+    qsort(lib.artists.items, lib.artists.count, sizeof(Artist), compare_artist_by_name);
 
     return lib;
 }

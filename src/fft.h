@@ -1,15 +1,14 @@
 #ifndef FFT_INCLUDED
 #define FFT_INCLUDED
 
+#include <complex.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <complex.h>
 #include <string.h>
 #define FFT_SIZE 8192
 #define HOP_SIZE 128
 #define NYQUIST_LIMIT (FFT_SIZE / 2.0)
-
 
 static float fft_shared_buf[FFT_SIZE];
 static size_t fft_shared_buf_head = 0;
@@ -25,8 +24,8 @@ void fill_fft_buffer_callback(void* samples, uint32_t n_samples) {
     float* s = (float*)samples;
 
     for (uint32_t i = 0; i < n_samples; i++) {
-        float l = s[i*2];
-        float r = s[i*2+1];
+        float l = s[i * 2];
+        float r = s[i * 2 + 1];
 
         float mono = 0.5f * (l + r);
 
@@ -35,9 +34,7 @@ void fill_fft_buffer_callback(void* samples, uint32_t n_samples) {
         if (fft_shared_buf_head >= FFT_SIZE) {
             fft_shared_buf_ready = true;
 
-            memmove(fft_shared_buf,
-                    fft_shared_buf + HOP_SIZE,
-                    (FFT_SIZE - HOP_SIZE) * sizeof(float));
+            memmove(fft_shared_buf, fft_shared_buf + HOP_SIZE, (FFT_SIZE - HOP_SIZE) * sizeof(float));
 
             fft_shared_buf_head = FFT_SIZE - HOP_SIZE;
         }
@@ -53,7 +50,7 @@ static void fft_internal(Complex* buf, int n) {
 
     for (int i = 0; i < half; i++) {
         even[i] = buf[i * 2];
-        odd[i]  = buf[i * 2 + 1];
+        odd[i] = buf[i * 2 + 1];
     }
 
     fft_internal(even, half);
@@ -69,8 +66,8 @@ static void fft_internal(Complex* buf, int n) {
         t.real = cos_a * odd[k].real - sin_a * odd[k].imag;
         t.imag = cos_a * odd[k].imag + sin_a * odd[k].real;
 
-        buf[k].real       = even[k].real + t.real;
-        buf[k].imag       = even[k].imag + t.imag;
+        buf[k].real = even[k].real + t.real;
+        buf[k].imag = even[k].imag + t.imag;
         buf[k + half].real = even[k].real - t.real;
         buf[k + half].imag = even[k].imag - t.imag;
     }
@@ -84,7 +81,6 @@ void compute_fft(float* in, Complex* out, int N) {
 
     fft_internal(out, N);
 }
-
 
 #else
 #error "Don't include this twice :)"
