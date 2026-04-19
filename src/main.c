@@ -469,7 +469,6 @@ Wisp wisp_init(int argc, char** argv) {
     SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
 
     Texture2D* tex = malloc(lib.albums.count * sizeof(Texture2D));
-    Color* tints = malloc(lib.albums.count * sizeof(Color));
 
     for (size_t i = 0; i < lib.albums.count; i++) {
         Track* t = lib.albums.items[i].tracks.items[0];
@@ -480,24 +479,6 @@ Wisp wisp_init(int argc, char** argv) {
             .data = t->cover,
             .mipmaps = 1,
         };
-        float r = 0, g = 0, b = 0;
-        int count = 0;
-        for (int y = 0; y < t->cover_h; y += 10) {
-            for (int x = 0; x < t->cover_w; x += 10) {
-                size_t idx = ((size_t)y * (size_t)t->cover_w + (size_t)x) * 3;
-                r += (float)t->cover[idx] / 255.0f;
-                g += (float)t->cover[idx + 1] / 255.0f;
-                b += (float)t->cover[idx + 2] / 255.0f;
-                count++;
-            }
-        }
-        if (count > 0) {
-            r /= count;
-            g /= count;
-            b /= count;
-        }
-        tints[i] = (Color){(unsigned char)(r * 255), (unsigned char)(g * 255), (unsigned char)(b * 255), 255};
-        tex[i] = LoadTextureFromImage(img);
     }
 
     char* pl_dir = playlist_dir_path(cfg.custom_playlist_dir);
