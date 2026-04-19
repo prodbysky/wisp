@@ -21,8 +21,8 @@ typedef struct {
     // crossfade state
     Music next_music;
     Track* next_track;
-    float crossfade_progress;   // inactive when next_track == NULL
-    float crossfade_duration;   // seconds
+    float crossfade_progress;  // inactive when next_track == NULL
+    float crossfade_duration;  // seconds
 
     Queue queue;
     bool shuffle;

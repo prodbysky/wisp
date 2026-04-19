@@ -120,8 +120,8 @@ void audio_update(Audio* a) {
 
     if (!a->playing) return;
 
-    float len     = GetMusicTimeLength(a->music);
-    float played  = GetMusicTimePlayed(a->music);
+    float len = GetMusicTimeLength(a->music);
+    float played = GetMusicTimePlayed(a->music);
     float remaining = len - played;
 
     if (a->next_track == NULL && remaining <= a->crossfade_duration && remaining > 0.0f) {
@@ -142,19 +142,19 @@ void audio_update(Audio* a) {
         if (a->crossfade_progress > 1.0f) a->crossfade_progress = 1.0f;
 
         float t = a->crossfade_progress;
-        float t_in  = t * t * (3.0f - 2.0f * t);
+        float t_in = t * t * (3.0f - 2.0f * t);
         float t_out = 1.0f - t_in;
 
-        SetMusicVolume(a->music,      t_out);
+        SetMusicVolume(a->music, t_out);
         SetMusicVolume(a->next_music, t_in);
 
         if (!IsMusicStreamPlaying(a->music) || a->crossfade_progress >= 1.0f) {
             StopMusicStream(a->music);
             UnloadMusicStream(a->music);
 
-            a->music         = a->next_music;
+            a->music = a->next_music;
             a->current_track = a->next_track;
-            a->next_track    = NULL;
+            a->next_track = NULL;
             a->crossfade_progress = 0.0f;
 
             SetMusicVolume(a->music, 1.0f);
