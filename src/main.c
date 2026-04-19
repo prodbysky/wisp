@@ -291,6 +291,8 @@ void wisp_tick(Wisp* wisp) {
 
         if (wisp->pane == PANE_PLAYLIST) {
             if (wisp->pl_pane == MP_ALBUM) {
+                const Playlist* pl  = &wisp->playlists.items[wisp->pl_selected_playlist];
+
                 if (IsKeyPressed(KEY_J)) {
                     if (wisp->playlists.count > 0 &&
                         wisp->pl_selected_playlist < wisp->playlists.count - 1)
@@ -302,6 +304,12 @@ void wisp_tick(Wisp* wisp) {
                 if (IsKeyPressed(KEY_L) && wisp->playlists.count > 0) {
                     wisp->pl_pane = MP_TRACK;
                     wisp->pl_selected_track = 0;
+                }
+
+                if (IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
+                    for (size_t i = 0; i < pl->tracks.count; i++) {
+                        audio_enqueue_single(&wisp->audio, pl->tracks.items[i]);
+                    }
                 }
 
                 {
@@ -343,7 +351,13 @@ void wisp_tick(Wisp* wisp) {
                 if (IsKeyPressed(KEY_ENTER) && pl->tracks.count > 0) {
                     audio_start_playback(&wisp->audio, pl->tracks.items[wisp->pl_selected_track]);
                 }
-                if (IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
+
+                if (shift && IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
+                    for (size_t i = 0; i < pl->tracks.count; i++) {
+                        audio_enqueue_single(&wisp->audio, pl->tracks.items[i]);
+                    }
+                }
+                if (!shift && IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
                     audio_enqueue_single(&wisp->audio, pl->tracks.items[wisp->pl_selected_track]);
                 }
             }
