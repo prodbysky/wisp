@@ -9,7 +9,9 @@
 #include <time.h>
 
 #include "audio.h"
-#include "dft.h"
+
+#include "fft.h"
+
 #include "library.h"
 #include "playlist.h"
 
@@ -87,7 +89,7 @@ typedef struct {
     Color last_color;
     float last_switch;
 
-    float magnitudes[DFT_SIZE / 2];
+    float magnitudes[FFT_SIZE / 2];
 
     Playlists playlists;
     char* playlist_dir;
@@ -473,7 +475,7 @@ Wisp wisp_init(int argc, char** argv) {
     SetWindowState(FLAG_WINDOW_RESIZABLE);
     InitAudioDevice();
     SetTargetFPS(180);
-    AttachAudioMixedProcessor(fill_dft_buffer_callback);
+    AttachAudioMixedProcessor(fill_fft_buffer_callback);
 
     Font font = LoadFontEx("res/Iosevka.ttf", FONT_SIZE, NULL, 0);
     SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
@@ -830,21 +832,21 @@ static void wisp_queue_album_from_the_selected_track(Wisp* wisp) {
 }
 
 static void prepare_dft_vis(Wisp* wisp) {
-    if (dft_shared_buf_ready && wisp->pane == PANE_VISUAL) {
-        dft_shared_buf_ready = 0;
-        static Complex out[DFT_SIZE];
-        for (int i = 0; i < DFT_SIZE; i++) {
-            float w = 0.5f * (1.0f - cosf(2.0f * PI * i / (DFT_SIZE - 1)));
-            dft_shared_buf[i] *= w;
+    if (fft_shared_buf_ready && wisp->pane == PANE_VISUAL) {
+        fft_shared_buf_ready = 0;
+        static Complex out[FFT_SIZE];
+        for (int i = 0; i < FFT_SIZE; i++) {
+            float w = 0.5f * (1.0f - cosf(2.0f * PI * i / (FFT_SIZE - 1)));
+            fft_shared_buf[i] *= w;
         }
-        compute_dft(dft_shared_buf, out, DFT_SIZE);
-        for (int k = 0; k < DFT_SIZE / 2; k++) {
+        compute_fft(fft_shared_buf, out, FFT_SIZE);
+        for (int k = 0; k < FFT_SIZE / 2; k++) {
             float mag  = sqrtf(out[k].real * out[k].real + out[k].imag * out[k].imag);
             float db   = 20.0f * log10f(mag + 1e-6f);
             float norm = (db - (-20.0f)) / (20.0f - (-20.0f));
             if (norm < 0) norm = 0;
             if (norm > 1) norm = 1;
-            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.6f + norm * 0.4f;
+            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.7f + norm * 0.3f;
         }
     }
 }
@@ -887,7 +889,7 @@ static void draw_dft(const Wisp* w, Rectangle bound) {
         int k1 = (int)expf(log_min + (log_max - log_min) * t1);
         if (k1 <= k0) k1 = k0 + 1;
         float sum = 0; int cnt = 0;
-        for (int k = k0; k < k1; k++) { sum += w->magnitudes[k]; cnt++; }
+        for (int k = k0; k < k1; k++) { sum += w->magnitudes[k] * 1.25; cnt++; }
         float mag = cnt > 0 ? sum / cnt : 0;
         mag = logf(1.0f + mag);
         float h  = mag * bound.height / 3.0f;
@@ -895,7 +897,7 @@ static void draw_dft(const Wisp* w, Rectangle bound) {
         int   x1 = (int)(bound.x + ((float)(i + 1) / BARS) * bound.width);
         if (x1 <= x0) x1 = x0 + 1;
         DrawRectangleGradientV(x0, (int)(bound.y + bound.height - h), x1 - x0, (int)h,
-                               ColorAlpha(t.rectangle, -0.2f), ColorAlpha(t.rectangle, 1.0f));
+                               ColorAlpha(t.rectangle, 1.0f), ColorAlpha(t.rectangle, 1.0f));
     }
 }
 
