@@ -125,7 +125,7 @@ static Color wisp_get_lerped_base_color(const Wisp* wisp);
 static const Album* wisp_get_selected_album(const Wisp* wisp);
 
 static void draw_queue(const Wisp* w, Rectangle bound);
-static void draw_dft(const Wisp* w, Rectangle bound);
+static void draw_fft(const Wisp* w, Rectangle bound);
 static void wisp_draw_visual_pane(Wisp* wisp);
 static void wisp_draw_playlist_pane(Wisp* wisp);
 static void wisp_draw_overlay(Wisp* wisp);
@@ -134,7 +134,7 @@ static void wisp_next_pane(Wisp* wisp);
 static void wisp_next_loop_mode(Wisp* wisp);
 static void wisp_play_selected_track(Wisp* wisp);
 static void wisp_queue_album_from_the_selected_track(Wisp* wisp);
-static void prepare_dft_vis(Wisp* wisp);
+static void prepare_fft_vis(Wisp* wisp);
 
 static void overlay_open(Wisp* w, bool whole_album);
 static void overlay_close(Wisp* w);
@@ -372,7 +372,7 @@ void wisp_tick(Wisp* wisp) {
     wisp->pl_track_scroll     += (wisp->pl_track_wanted_scroll - wisp->pl_track_scroll) * 0.15f;
 
 draw:
-    prepare_dft_vis(wisp);
+    prepare_fft_vis(wisp);
     audio_update(&wisp->audio);
     BeginDrawing();
     ClearBackground(wisp_get_lerped_base_color(wisp));
@@ -786,12 +786,12 @@ static void wisp_draw_playlist_pane(Wisp* wisp) {
 }
 
 static void wisp_draw_visual_pane(Wisp* wisp) {
-    const Rectangle dft_rect = {0, -(float)GetScreenHeight(), (float)GetScreenWidth(), (float)GetScreenHeight() * 2};
+    const Rectangle fft_rect = {0, -(float)GetScreenHeight(), (float)GetScreenWidth(), (float)GetScreenHeight() * 2};
     if (wisp->audio.current_track == NULL) return;
     const char* title  = wisp->audio.current_track->title;
     const char* album  = wisp->audio.current_track->album;
     const char* artist = wisp->audio.current_track->artist;
-    draw_dft(wisp, dft_rect);
+    draw_fft(wisp, fft_rect);
     const Theme t = wisp_derive_theme(wisp);
     DrawTextEx(wisp->font, title,  (Vector2){8,      8}, FONT_SIZE, 0, t.focused_text);
     DrawTextEx(wisp->font, album,  (Vector2){8,     40}, FONT_SIZE, 0, t.focused_text);
@@ -831,7 +831,7 @@ static void wisp_queue_album_from_the_selected_track(Wisp* wisp) {
         audio_enqueue_single(&wisp->audio, alb->tracks.items[i]);
 }
 
-static void prepare_dft_vis(Wisp* wisp) {
+static void prepare_fft_vis(Wisp* wisp) {
     if (fft_shared_buf_ready && wisp->pane == PANE_VISUAL) {
         fft_shared_buf_ready = 0;
         static Complex out[FFT_SIZE];
@@ -879,7 +879,7 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
     }
 }
 
-static void draw_dft(const Wisp* w, Rectangle bound) {
+static void draw_fft(const Wisp* w, Rectangle bound) {
     const Theme t = wisp_derive_theme(w);
     for (int i = 0; i < BARS; i++) {
         float t0 = (float)i / BARS;
