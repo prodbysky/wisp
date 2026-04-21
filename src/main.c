@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
+#include <raylib.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,7 @@
 #include "fft.h"
 #include "library.h"
 #include "playlist.h"
+#include "playlist_overlay.h"
 
 typedef enum {
     PANE_MAIN,
@@ -37,30 +39,6 @@ typedef struct {
 bool config_parse_args(int* argc, char*** argv, Config* cc);
 bool config_parse_file(const char* path, Config* cc);
 void help_and_exit(const Config* cfg);
-
-typedef enum {
-    OVERLAY_NONE,
-    OVERLAY_PLAYLIST_PICK,
-    OVERLAY_PLAYLIST_NEW,
-} OverlayMode;
-
-#define OVERLAY_BUF_MAX 256
-
-typedef struct {
-    OverlayMode mode;
-
-    char buf[OVERLAY_BUF_MAX];
-    int buf_len;
-
-    size_t* filtered_indices;
-    size_t filtered_count;
-
-    size_t selected;
-
-    bool add_whole_album;
-    size_t pending_album_idx;
-    size_t pending_track_idx;
-} Overlay;
 
 typedef struct {
     Config cli_config;
@@ -116,12 +94,6 @@ static void wisp_play_selected_track(Wisp* wisp);
 static void wisp_queue_album_from_the_selected_track(Wisp* wisp);
 static void prepare_fft_vis(Wisp* wisp);
 
-static void overlay_open(Wisp* w, bool whole_album);
-static void overlay_close(Wisp* w);
-static void overlay_rebuild_filter(Wisp* w);
-static void overlay_handle_char(Wisp* w, int ch);
-static void overlay_confirm(Wisp* w);
-
 int main(int argc, char** argv) {
     if (argc > 1 && strcmp("--help", argv[1]) == 0) {
         printf("Usage:\n");
@@ -156,28 +128,7 @@ void wisp_tick(Wisp* wisp) {
     const float WH = (float)GetScreenHeight();
 
     if (wisp->overlay.mode != OVERLAY_NONE) {
-        int ch;
-        while ((ch = GetCharPressed()) != 0) {
-            if (ch >= 32 && ch < 127) overlay_handle_char(wisp, ch);
-        }
-        if (IsKeyPressed(KEY_BACKSPACE) && wisp->overlay.buf_len > 0) {
-            wisp->overlay.buf[--wisp->overlay.buf_len] = '\0';
-            overlay_rebuild_filter(wisp);
-        }
-        if (IsKeyPressed(KEY_ESCAPE)) { overlay_close(wisp); }
-        if (wisp->overlay.mode == OVERLAY_PLAYLIST_PICK) {
-            if (IsKeyPressed(KEY_J) && wisp->overlay.selected + 1 < wisp->overlay.filtered_count)
-                wisp->overlay.selected++;
-            if (IsKeyPressed(KEY_K) && wisp->overlay.selected > 0) wisp->overlay.selected--;
-            if (IsKeyPressed(KEY_N)) {
-                wisp->overlay.mode = OVERLAY_PLAYLIST_NEW;
-                wisp->overlay.buf_len = 0;
-                wisp->overlay.buf[0] = '\0';
-            }
-            if (IsKeyPressed(KEY_ENTER)) overlay_confirm(wisp);
-        } else if (wisp->overlay.mode == OVERLAY_PLAYLIST_NEW) {
-            if (IsKeyPressed(KEY_ENTER) && wisp->overlay.buf_len > 0) overlay_confirm(wisp);
-        }
+        overlay_update(&wisp->overlay, &wisp->playlists, wisp->playlist_dir, &wisp->library.albums);
         goto draw;
     }
 
@@ -210,9 +161,9 @@ void wisp_tick(Wisp* wisp) {
                 }
 
                 if (IsKeyPressed(KEY_A) && shift)
-                    overlay_open(wisp, true);
+                    overlay_open(&wisp->overlay, true, wisp->selected_album, wisp->selected_track, &wisp->playlists);
                 else if (IsKeyPressed(KEY_A))
-                    overlay_open(wisp, false);
+                    overlay_open(&wisp->overlay, false, wisp->selected_album, wisp->selected_track, &wisp->playlists);
             }
 
             if (wisp->main_pane == MP_TRACK) {
@@ -236,9 +187,9 @@ void wisp_tick(Wisp* wisp) {
                 if (IsKeyPressed(KEY_H)) wisp->main_pane = MP_ALBUM;
 
                 if (IsKeyPressed(KEY_A) && shift)
-                    overlay_open(wisp, true);
+                    overlay_open(&wisp->overlay, true, wisp->selected_album, wisp->selected_track, &wisp->playlists);
                 else if (IsKeyPressed(KEY_A))
-                    overlay_open(wisp, false);
+                    overlay_open(&wisp->overlay, false, wisp->selected_album, wisp->selected_track, &wisp->playlists);
             }
 
             if (IsKeyPressed(KEY_ENTER)) wisp_play_selected_track(wisp);
@@ -447,6 +398,7 @@ Wisp wisp_init(int argc, char** argv) {
     InitWindow(1280, 720, "wispy");
     SetWindowState(FLAG_WINDOW_ALWAYS_RUN);
     SetWindowState(FLAG_WINDOW_RESIZABLE);
+    SetExitKey(0);
     InitAudioDevice();
     SetTargetFPS(180);
     AttachAudioMixedProcessor(fill_fft_buffer_callback);
@@ -572,76 +524,6 @@ void help_and_exit(const Config* cfg) {
     printf("  --help                : show this help message\n");
     printf("  --path <DIR>          : set custom music library path\n");
     printf("  --playlist-dir <DIR>  : set custom playlist directory\n");
-}
-
-static void overlay_rebuild_filter(Wisp* w) {
-    free(w->overlay.filtered_indices);
-    w->overlay.filtered_indices = NULL;
-    w->overlay.filtered_count = 0;
-    w->overlay.selected = 0;
-
-    size_t cap = w->playlists.count;
-    if (cap == 0) return;
-
-    w->overlay.filtered_indices = malloc(cap * sizeof(size_t));
-
-    const char* needle = w->overlay.buf;
-    for (size_t i = 0; i < w->playlists.count; i++) {
-        if (needle[0] == '\0' || strstr(w->playlists.items[i].name, needle)) {
-            w->overlay.filtered_indices[w->overlay.filtered_count++] = i;
-        }
-    }
-}
-
-static void overlay_open(Wisp* w, bool whole_album) {
-    w->overlay.mode = OVERLAY_PLAYLIST_PICK;
-    w->overlay.buf_len = 0;
-    w->overlay.buf[0] = '\0';
-    w->overlay.add_whole_album = whole_album;
-    w->overlay.pending_album_idx = w->selected_album;
-    w->overlay.pending_track_idx = w->selected_track;
-    overlay_rebuild_filter(w);
-
-    if (w->playlists.count == 0) w->overlay.mode = OVERLAY_PLAYLIST_NEW;
-}
-
-static void overlay_close(Wisp* w) {
-    w->overlay.mode = OVERLAY_NONE;
-    free(w->overlay.filtered_indices);
-    w->overlay.filtered_indices = NULL;
-    w->overlay.filtered_count = 0;
-}
-
-static void overlay_handle_char(Wisp* w, int ch) {
-    if (w->overlay.buf_len >= OVERLAY_BUF_MAX - 1) return;
-    w->overlay.buf[w->overlay.buf_len++] = (char)ch;
-    w->overlay.buf[w->overlay.buf_len] = '\0';
-    if (w->overlay.mode == OVERLAY_PLAYLIST_PICK) overlay_rebuild_filter(w);
-}
-
-static void overlay_add_pending_to_playlist(Wisp* w, Playlist* pl) {
-    const Album* alb = &w->library.albums.items[w->overlay.pending_album_idx];
-    if (w->overlay.add_whole_album) {
-        for (size_t i = w->overlay.pending_track_idx; i < alb->tracks.count; i++)
-            playlist_add_track(pl, alb->tracks.items[i]);
-    } else {
-        playlist_add_track(pl, alb->tracks.items[w->overlay.pending_track_idx]);
-    }
-}
-
-static void overlay_confirm(Wisp* w) {
-    if (w->overlay.mode == OVERLAY_PLAYLIST_PICK) {
-        if (w->overlay.filtered_count == 0) return;
-        size_t idx = w->overlay.filtered_indices[w->overlay.selected];
-        overlay_add_pending_to_playlist(w, &w->playlists.items[idx]);
-        overlay_close(w);
-    } else if (w->overlay.mode == OVERLAY_PLAYLIST_NEW) {
-        if (w->overlay.buf_len == 0) return;
-        Playlist* pl = playlists_create(&w->playlists, w->overlay.buf);
-        playlist_save_one(w->playlist_dir, pl);
-        overlay_add_pending_to_playlist(w, pl);
-        overlay_close(w);
-    }
 }
 
 static void wisp_draw_overlay(Wisp* wisp) {
