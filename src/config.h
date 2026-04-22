@@ -1,8 +1,9 @@
 #define FONT_SIZE 24
 #define BARS 512
 
-#define SCROLL_SMOOTH 0.15
-#define RECTANGLE_ROUNDNESS 0.15
+#define SCROLL_SMOOTH 0.15f
+#define RECTANGLE_ROUNDNESS 0.15f
+#define PAD 8.0f
 
 #define FOCUSED_PANEL_COLOR GetColor(0x333333ff)
 #define UNFOCUSED_PANEL_COLOR GetColor(0x222222ff)

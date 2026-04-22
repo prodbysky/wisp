@@ -86,7 +86,6 @@ static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_fft(const Wisp* w, Rectangle bound);
 static void wisp_draw_visual_pane(Wisp* wisp);
 static void wisp_draw_playlist_pane(Wisp* wisp);
-static void wisp_draw_overlay(Wisp* wisp);
 
 static void wisp_next_pane(Wisp* wisp);
 static void wisp_next_loop_mode(Wisp* wisp);
@@ -354,7 +353,7 @@ draw:
         case PANE_COUNT: assert(false);
     }
 
-    if (wisp->overlay.mode != OVERLAY_NONE) wisp_draw_overlay(wisp);
+    if (wisp->overlay.mode != OVERLAY_NONE) overlay_draw(&wisp->overlay, (Rectangle){.width = GetScreenWidth(), .height = GetScreenHeight()}, wisp->font, &wisp->playlists);
 
     EndDrawing();
 }
@@ -524,80 +523,6 @@ void help_and_exit(const Config* cfg) {
     printf("  --help                : show this help message\n");
     printf("  --path <DIR>          : set custom music library path\n");
     printf("  --playlist-dir <DIR>  : set custom playlist directory\n");
-}
-
-static void wisp_draw_overlay(Wisp* wisp) {
-    const float WW = (float)GetScreenWidth();
-    const float WH = (float)GetScreenHeight();
-
-    DrawRectangle(0, 0, (int)WW, (int)WH, ColorAlpha(BLACK, 0.55f));
-
-    const float box_w = WW * 0.5f;
-    const float box_x = (WW - box_w) * 0.5f;
-    const float box_y = WH * 0.15f;
-    const float line_h = FONT_SIZE + 8.0f;
-
-    if (wisp->overlay.mode == OVERLAY_PLAYLIST_NEW) {
-        const float box_h = line_h * 3.0f;
-        DrawRectangleRounded((Rectangle){box_x, box_y, box_w, box_h}, RECTANGLE_ROUNDNESS, 16, UNFOCUSED_PANEL_COLOR);
-
-        DrawTextEx(wisp->font, "New playlist name:", (Vector2){box_x + 12, box_y + 8}, FONT_SIZE, 0,
-                   FOCUSED_TEXT_COLOR);
-
-        DrawRectangleRounded((Rectangle){box_x + 8, box_y + line_h + 4, box_w - 16, line_h}, RECTANGLE_ROUNDNESS, 16,
-                             UNFOCUSED_PANEL_COLOR);
-        DrawTextEx(wisp->font, wisp->overlay.buf, (Vector2){box_x + 16, box_y + line_h + 8}, FONT_SIZE, 0,
-                   FOCUSED_TEXT_COLOR);
-
-        if ((int)(GetTime() * 2) % 2 == 0) {
-            float cx = box_x + 16 + MeasureTextEx(wisp->font, wisp->overlay.buf, FONT_SIZE, 0).x;
-            DrawRectangle((int)cx, (int)(box_y + line_h + 8), 2, FONT_SIZE, FOCUSED_TEXT_COLOR);
-        }
-
-        DrawTextEx(wisp->font, "[Enter] confirm   [Esc] cancel", (Vector2){box_x + 12, box_y + 2 * line_h + 8},
-                   FONT_SIZE - 6, 0, UNFOCUSED_TEXT_COLOR);
-        return;
-    }
-
-    const float max_visible = 8.0f;
-    float visible = (float)(wisp->overlay.filtered_count < (size_t)max_visible ? wisp->overlay.filtered_count
-                                                                               : (size_t)max_visible);
-    if (visible < 1) visible = 1;
-
-    const float box_h = line_h * (visible + 2.5f);
-
-    DrawRectangleRounded((Rectangle){box_x, box_y, box_w, box_h}, RECTANGLE_ROUNDNESS, 16, UNFOCUSED_PANEL_COLOR);
-
-    DrawRectangleRounded((Rectangle){box_x + 8, box_y + 6, box_w - 16, line_h}, RECTANGLE_ROUNDNESS, 16,
-                         UNFOCUSED_PANEL_COLOR);
-    const char* placeholder = "Search playlist…";
-    const char* search_text = wisp->overlay.buf_len > 0 ? wisp->overlay.buf : placeholder;
-    Color search_col = wisp->overlay.buf_len > 0 ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-    DrawTextEx(wisp->font, search_text, (Vector2){box_x + 16, box_y + 10}, FONT_SIZE, 0, search_col);
-    if (wisp->overlay.buf_len > 0 && (int)(GetTime() * 2) % 2 == 0) {
-        float cx = box_x + 16 + MeasureTextEx(wisp->font, wisp->overlay.buf, FONT_SIZE, 0).x;
-        DrawRectangle((int)cx, (int)(box_y + 10), 2, FONT_SIZE, FOCUSED_TEXT_COLOR);
-    }
-
-    float ry = box_y + line_h + 8;
-    if (wisp->overlay.filtered_count == 0) {
-        DrawTextEx(wisp->font, "No playlists found.", (Vector2){box_x + 16, ry + 4}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
-    } else {
-        for (size_t i = 0; i < (size_t)max_visible && i < wisp->overlay.filtered_count; i++) {
-            size_t pi = wisp->overlay.filtered_indices[i];
-            const bool sel = (i == wisp->overlay.selected);
-            Color rect_color = sel ? FOCUSED_PANEL_COLOR : UNFOCUSED_PANEL_COLOR;
-            if (sel)
-                DrawRectangleRounded((Rectangle){box_x + 4, ry, box_w - 8, line_h}, RECTANGLE_ROUNDNESS, 16,
-                                     rect_color);
-            Color tc = sel ? UNFOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-            DrawTextEx(wisp->font, wisp->playlists.items[pi].name, (Vector2){box_x + 16, ry + 4}, FONT_SIZE, 0, tc);
-            ry += line_h;
-        }
-    }
-
-    DrawTextEx(wisp->font, "[n] new   [Enter] add   [Esc] cancel", (Vector2){box_x + 12, box_y + box_h - line_h + 4},
-               FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
 }
 
 static void wisp_draw_playlist_pane(Wisp* wisp) {

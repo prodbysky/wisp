@@ -1,8 +1,10 @@
 #include <stddef.h>
 #include <raylib.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include "library.h"
 #include "playlist.h"
+#include "config.h"
 
 typedef enum {
     OVERLAY_NONE,
@@ -35,7 +37,7 @@ void overlay_handle_char(Overlay* overlay, int ch, const Playlists* playlists);
 void overlay_confirm(Overlay* overlay, Playlists* playlists, const char* playlists_dir, const Albums* albums);
 
 void overlay_update(Overlay* overlay, Playlists* playlists, const char* playlists_dir, const Albums* albums) {
-    if (IsKeyPressedRepeat(KEY_BACKSPACE) && overlay->buf_len > 0) {
+    if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE))&& overlay->buf_len > 0) {
         overlay->buf[--overlay->buf_len] = 0;
         overlay_rebuild_filter(overlay, playlists);
     }
@@ -61,6 +63,85 @@ void overlay_update(Overlay* overlay, Playlists* playlists, const char* playlist
             overlay->buf[overlay->buf_len++] = ch;
             overlay->buf[overlay->buf_len] = 0;
             overlay_rebuild_filter(overlay, playlists);
+        }
+    }
+}
+
+void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Playlists* playlists) {
+    DrawRectangle(bound.x, bound.y, bound.width, bound.height, ColorAlpha(BLACK, 0.55));
+
+    const float box_w = bound.width * 0.5f;
+    const float box_x = (bound.width - box_w) * 0.5f;
+    const float box_y = bound.height * 0.15f;
+    const float line_h = FONT_SIZE + 8.0f;
+
+    Vector2 cursor = (Vector2){
+        .x = box_x + PAD,
+        .y = box_y + PAD
+    };
+
+    switch (overlay->mode) {
+        case OVERLAY_PLAYLIST_NEW: {
+            const Rectangle box = {
+                .x = box_x,
+                .y = box_y,
+                .width = box_w,
+                .height = 3.5f * line_h
+            };
+            {
+                DrawRectangleRounded(box, RECTANGLE_ROUNDNESS, 16, UNFOCUSED_PANEL_COLOR);
+                DrawTextEx(font, "new playlist name:", cursor, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
+                cursor.y += line_h;
+            }
+            {
+                DrawRectangleRounded((Rectangle){cursor.x, cursor.y, box.width - 2 * PAD, line_h}, RECTANGLE_ROUNDNESS, 16, FOCUSED_PANEL_COLOR);
+                DrawTextEx(font, overlay->buf, (Vector2){cursor.x + PAD, cursor.y + 4}, FONT_SIZE, 0,
+                           FOCUSED_TEXT_COLOR);
+                if ((int)(GetTime() * 2) % 2 == 0) {
+                    float cx = box_x + 16 + MeasureTextEx(font, overlay->buf, FONT_SIZE, 0).x;
+                    DrawRectangle((int)cx, (int)(cursor.y + 4), 2, FONT_SIZE, FOCUSED_TEXT_COLOR);
+                }
+                cursor.y += line_h;
+            }
+            DrawTextEx(font, "[Enter] confirm   [Esc] cancel", (Vector2){cursor.x, cursor.y + PAD},
+                       FONT_SIZE, 0, UNFOCUSED_TEXT_COLOR);
+            break;
+        }
+        case OVERLAY_PLAYLIST_PICK: {
+            size_t visible = overlay->filtered_count < 8 ? overlay->filtered_count : 8;
+            if (visible < 1) visible = 1;
+            const float height = line_h * (visible * 4);
+            DrawRectangleRounded((Rectangle){box_x, box_y, box_w, height}, RECTANGLE_ROUNDNESS, 16, UNFOCUSED_PANEL_COLOR);
+            DrawRectangleRounded((Rectangle){box_x + PAD, box_y + PAD, box_w - 2 * PAD, line_h}, RECTANGLE_ROUNDNESS, 16,
+                                 FOCUSED_PANEL_COLOR);
+            const char* placeholder = "Search playlist…";
+            const char* search_text = overlay->buf_len > 0 ? overlay->buf : placeholder;
+            Color search_col = overlay->buf_len > 0 ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
+            DrawTextEx(font, search_text, (Vector2){box_x + 16, box_y + (float)(PAD * 1.5)}, FONT_SIZE, 0, search_col);
+            if (overlay->buf_len > 0 && (int)(GetTime() * 2) % 2 == 0) {
+                float cx = box_x + 16 + MeasureTextEx(font, overlay->buf, FONT_SIZE, 0).x;
+                DrawRectangle((int)cx, (int)(box_y + 10), 2, FONT_SIZE, FOCUSED_TEXT_COLOR);
+            }
+            float ry = box_y + line_h + 8;
+            if (overlay->filtered_count == 0) {
+                DrawTextEx(font, "No playlists found.", (Vector2){box_x + 16, ry + 4}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
+            } else {
+                for (size_t i = 0; i < 8 && i < overlay->filtered_count; i++) {
+                    size_t pi = overlay->filtered_indices[i];
+                    const bool sel = (i == overlay->selected);
+                    Color rect_color = sel ? FOCUSED_PANEL_COLOR : UNFOCUSED_PANEL_COLOR;
+                    if (sel)
+                        DrawRectangleRounded((Rectangle){box_x + PAD, ry + PAD, box_w - 2 * PAD, line_h}, RECTANGLE_ROUNDNESS, 16,
+                                             rect_color);
+                    Color tc = sel ? UNFOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
+                    DrawTextEx(font, playlists->items[pi].name, (Vector2){box_x + 16, ry + (float)(PAD * 1.5)}, FONT_SIZE, 0, tc);
+                    ry += line_h;
+                }
+            }
+
+            DrawTextEx(font, "[n] new   [Enter] add   [Esc] cancel", (Vector2){box_x + 12, box_y + height - line_h + 4},
+                       FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
+            break;
         }
     }
 }
