@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include "library.h"
 #include "playlist.h"
+#include "draw_utils.h"
 
 #include "compile_time_config.h"
 
@@ -38,6 +39,8 @@ void overlay_handle_char(Overlay* overlay, int ch, const Playlists* playlists);
 void overlay_confirm(Overlay* overlay, Playlists* playlists, const char* playlists_dir, const Albums* albums);
 
 void overlay_update(Overlay* overlay, Playlists* playlists, const char* playlists_dir, const Albums* albums) {
+    const bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+    const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE))&& overlay->buf_len > 0) {
         overlay->buf[--overlay->buf_len] = 0;
         overlay_rebuild_filter(overlay, playlists);
@@ -50,7 +53,7 @@ void overlay_update(Overlay* overlay, Playlists* playlists, const char* playlist
         if (IsKeyPressed(KEY_J) && overlay->selected + 1 < overlay->filtered_count)
             overlay->selected++;
         if (IsKeyPressed(KEY_K) && overlay->selected > 0) overlay->selected--;
-        if (IsKeyPressed(KEY_N)) {
+        if (ctrl && IsKeyPressed(KEY_N)) {
             overlay->mode = OVERLAY_PLAYLIST_NEW;
             overlay->buf_len = 0;
             overlay->buf[0] = '\0';
@@ -90,12 +93,13 @@ void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Play
                 .height = 3.5f * line_h
             };
             {
-                DrawRectangleRounded(box, RECTANGLE_ROUNDNESS, 16, UNFOCUSED_PANEL_COLOR);
+
+                draw_round_rect(box, UNFOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
                 DrawTextEx(font, "new playlist name:", cursor, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
                 cursor.y += line_h;
             }
             {
-                DrawRectangleRounded((Rectangle){cursor.x, cursor.y, box.width - 2 * PAD, line_h}, RECTANGLE_ROUNDNESS, 16, FOCUSED_PANEL_COLOR);
+                draw_round_rect((Rectangle){cursor.x, cursor.y, box.width - 2 * PAD, line_h}, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
                 DrawTextEx(font, overlay->buf, (Vector2){cursor.x + PAD, cursor.y + 4}, FONT_SIZE, 0,
                            FOCUSED_TEXT_COLOR);
                 if ((int)(GetTime() * 2) % 2 == 0) {
@@ -112,9 +116,9 @@ void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Play
             size_t visible = overlay->filtered_count < 8 ? overlay->filtered_count : 8;
             if (visible < 1) visible = 1;
             const float height = line_h * (visible * 4);
-            DrawRectangleRounded((Rectangle){box_x, box_y, box_w, height}, RECTANGLE_ROUNDNESS, 16, UNFOCUSED_PANEL_COLOR);
-            DrawRectangleRounded((Rectangle){box_x + PAD, box_y + PAD, box_w - 2 * PAD, line_h}, RECTANGLE_ROUNDNESS, 16,
-                                 FOCUSED_PANEL_COLOR);
+
+            draw_round_rect((Rectangle){box_x, box_y, box_w, height}, UNFOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
+            draw_round_rect((Rectangle){box_x + PAD, box_y + PAD, box_w - 2 * PAD, line_h}, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
             const char* placeholder = "Search playlist…";
             const char* search_text = overlay->buf_len > 0 ? overlay->buf : placeholder;
             Color search_col = overlay->buf_len > 0 ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
@@ -132,15 +136,14 @@ void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Play
                     const bool sel = (i == overlay->selected);
                     Color rect_color = sel ? FOCUSED_PANEL_COLOR : UNFOCUSED_PANEL_COLOR;
                     if (sel)
-                        DrawRectangleRounded((Rectangle){box_x + PAD, ry + PAD, box_w - 2 * PAD, line_h}, RECTANGLE_ROUNDNESS, 16,
-                                             rect_color);
+                        draw_round_rect((Rectangle){box_x + PAD, ry + PAD, box_w - 2 * PAD, line_h}, rect_color, RECTANGLE_ROUNDNESS);
                     Color tc = sel ? UNFOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
                     DrawTextEx(font, playlists->items[pi].name, (Vector2){box_x + 16, ry + (float)(PAD * 1.5)}, FONT_SIZE, 0, tc);
                     ry += line_h;
                 }
             }
 
-            DrawTextEx(font, "[n] new   [Enter] add   [Esc] cancel", (Vector2){box_x + 12, box_y + height - line_h + 4},
+            DrawTextEx(font, "[C-n] new   [Enter] add   [Esc] cancel", (Vector2){box_x + 12, box_y + height - line_h + 4},
                        FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
             break;
         }

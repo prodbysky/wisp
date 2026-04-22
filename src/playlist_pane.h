@@ -1,6 +1,7 @@
 #include "audio.h"
 #include "playlist.h"
 #include "compile_time_config.h"
+#include "draw_utils.h"
 
 typedef enum {
     PPS_PLAYLIST,
@@ -48,7 +49,7 @@ void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* 
             if (pane->playlists_target_offset > max_off) pane->playlists_target_offset = max_off;
             float top = pane->playlists_offset + eh;
             float bottom = pane->playlists_offset + bound.height - eh;
-            if (cur < top) pane->playlists_target_offset = cur - eh;
+            if (cur < top) pane->playlists_target_offset = cur;
             if (cur > bottom) pane->playlists_target_offset = cur - (bound.height - eh);
         }
     }
@@ -63,7 +64,7 @@ void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* 
         if (pane->tracklist_target_offset > max_scroll) pane->tracklist_target_offset = max_scroll;
         float top = pane->tracklist_offset + eh;
         float bottom = pane->tracklist_offset + bound.height - eh;
-        if (cur_off < top) pane->tracklist_target_offset = cur_off - eh;
+        if (cur_off < top) pane->tracklist_target_offset = cur_off;
         if (cur_off > bottom) pane->tracklist_target_offset = cur_off - (bound.height - eh);
 
         if (IsKeyPressed(KEY_J)) {
@@ -103,13 +104,14 @@ void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, co
 
     {
         BeginScissorMode(0, 0, (int)(bound.width / 3 - PAD), (int)bound.height);
-        Vector2 cursor = {PAD, PAD - pane->tracklist_offset};
+        Vector2 cursor = {PAD, PAD - pane->playlists_offset};
         for (size_t pi = 0; pi < playlists->count; pi++) {
             const bool focused = (pi == pane->selected_playlist);
             const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
             const Color bg_color = focused ? UNFOCUSED_PANEL_COLOR : FOCUSED_PANEL_COLOR;
             const Rectangle bg = {cursor.x - 2, cursor.y, bound.width / 3 - PAD * 2, FONT_SIZE + 4};
-            DrawRectangleRounded(bg, RECTANGLE_ROUNDNESS, 16, bg_color);
+
+            draw_round_rect(bg, bg_color, RECTANGLE_ROUNDNESS);
             DrawTextPro(font, playlists->items[pi].name, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
                         SHADOW_COLOR);
             DrawTextPro(font, playlists->items[pi].name, cursor, (Vector2){-2, -2}, 0, FONT_SIZE, 0,
@@ -132,7 +134,8 @@ void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, co
             const bool focused = (ti == pane->selected_track && pane->selected_pane == PPS_TRACK);
             const Color tc = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
             const Rectangle bg = {cursor.x - 2, cursor.y, 2 * (bound.width / 3) - PAD * 2, FONT_SIZE + 4};
-            DrawRectangleRounded(bg, RECTANGLE_ROUNDNESS, 16, FOCUSED_PANEL_COLOR);
+
+            draw_round_rect(bg, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
             DrawTextPro(font, pl->tracks.items[ti]->title, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
                         SHADOW_COLOR);
             DrawTextPro(font, pl->tracks.items[ti]->title, cursor, (Vector2){-2, -2}, 0, FONT_SIZE, 0, tc);
