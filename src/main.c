@@ -16,6 +16,7 @@
 #include "library.h"
 #include "playlist.h"
 #include "playlist_overlay.h"
+#include "playlist_pane.h"
 
 typedef enum {
     PANE_MAIN,
@@ -55,17 +56,8 @@ typedef struct {
     Playlists playlists;
     char* playlist_dir;
 
-    size_t pl_selected_playlist;
-    size_t pl_selected_track;
-
-    float pl_list_offset;
-    float pl_list_wanted_offset;
-
-    float pl_track_scroll;
-    float pl_track_wanted_scroll;
-
-    MainPane pl_pane;
     Overlay overlay;
+    PlaylistPane playlist_pane;
 } Wisp;
 
 Wisp wisp_init(int argc, char** argv);
@@ -76,7 +68,6 @@ static const Album* wisp_get_selected_album(const Wisp* wisp);
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_fft(const Wisp* w, Rectangle bound);
 static void wisp_draw_visual_pane(Wisp* wisp);
-static void wisp_draw_playlist_pane(Wisp* wisp);
 
 static void wisp_next_pane(Wisp* wisp);
 static void wisp_next_loop_mode(Wisp* wisp);
@@ -109,9 +100,6 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-static const float BORDER_PAD = 8.0f;
-static const float ALBUM_ENTRY_H = FONT_SIZE + 8.0f + 64.0f;
-static const float TRACK_ENTRY_H = FONT_SIZE + 8.0f;
 
 void wisp_tick(Wisp* wisp) {
     const float WW = (float)GetScreenWidth();
@@ -191,7 +179,7 @@ void wisp_tick(Wisp* wisp) {
             {
                 const float top = wisp->actual_album_offset + ALBUM_ENTRY_H;
                 const float bottom = wisp->actual_album_offset + WH - ALBUM_ENTRY_H;
-                const float cur = BORDER_PAD + (float)wisp->selected_album * ALBUM_ENTRY_H;
+                const float cur = PAD + (float)wisp->selected_album * ALBUM_ENTRY_H;
                 float max_off = (float)wisp->library.albums.count * ALBUM_ENTRY_H - WH;
                 if (max_off < 0) max_off = 0;
                 if (wisp->wanted_album_offset < 0) wisp->wanted_album_offset = 0;
@@ -202,81 +190,10 @@ void wisp_tick(Wisp* wisp) {
         }
 
         if (wisp->pane == PANE_PLAYLIST) {
-            if (wisp->pl_pane == MP_ALBUM) {
-                const Playlist* pl = &wisp->playlists.items[wisp->pl_selected_playlist];
-
-                if (IsKeyPressed(KEY_J)) {
-                    if (wisp->playlists.count > 0 && wisp->pl_selected_playlist < wisp->playlists.count - 1)
-                        wisp->pl_selected_playlist++;
-                }
-                if (IsKeyPressed(KEY_K)) {
-                    if (wisp->pl_selected_playlist > 0) wisp->pl_selected_playlist--;
-                }
-                if (IsKeyPressed(KEY_L) && wisp->playlists.count > 0) {
-                    wisp->pl_pane = MP_TRACK;
-                    wisp->pl_selected_track = 0;
-                }
-
-                if (IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
-                    for (size_t i = 0; i < pl->tracks.count; i++) {
-                        audio_enqueue_single(&wisp->audio, pl->tracks.items[i]);
-                    }
-                }
-
-                {
-                    const float eh = TRACK_ENTRY_H;
-                    const float cur = (float)wisp->pl_selected_playlist * eh;
-                    float max_off = (float)wisp->playlists.count * eh - WH;
-                    if (max_off < 0) max_off = 0;
-                    if (wisp->pl_list_wanted_offset < 0) wisp->pl_list_wanted_offset = 0;
-                    if (wisp->pl_list_wanted_offset > max_off) wisp->pl_list_wanted_offset = max_off;
-                    float top = wisp->pl_list_offset + eh;
-                    float bottom = wisp->pl_list_offset + WH - eh;
-                    if (cur < top) wisp->pl_list_wanted_offset = cur - eh;
-                    if (cur > bottom) wisp->pl_list_wanted_offset = cur - (WH - eh);
-                }
-            }
-
-            if (wisp->pl_pane == MP_TRACK && wisp->playlists.count > 0) {
-                const Playlist* pl = &wisp->playlists.items[wisp->pl_selected_playlist];
-                const float eh = TRACK_ENTRY_H;
-                const float cur_off = (float)wisp->pl_selected_track * eh;
-                float max_scroll = (float)pl->tracks.count * eh - WH;
-                if (max_scroll < 0) max_scroll = 0;
-                if (wisp->pl_track_wanted_scroll < 0) wisp->pl_track_wanted_scroll = 0;
-                if (wisp->pl_track_wanted_scroll > max_scroll) wisp->pl_track_wanted_scroll = max_scroll;
-                float top = wisp->pl_track_scroll + eh;
-                float bottom = wisp->pl_track_scroll + WH - eh;
-                if (cur_off < top) wisp->pl_track_wanted_scroll = cur_off - eh;
-                if (cur_off > bottom) wisp->pl_track_wanted_scroll = cur_off - (WH - eh);
-
-                if (IsKeyPressed(KEY_J)) {
-                    if (pl->tracks.count > 0 && wisp->pl_selected_track < pl->tracks.count - 1)
-                        wisp->pl_selected_track++;
-                }
-                if (IsKeyPressed(KEY_K)) {
-                    if (wisp->pl_selected_track > 0) wisp->pl_selected_track--;
-                }
-                if (IsKeyPressed(KEY_H)) wisp->pl_pane = MP_ALBUM;
-
-                if (IsKeyPressed(KEY_ENTER) && pl->tracks.count > 0) {
-                    audio_start_playback(&wisp->audio, pl->tracks.items[wisp->pl_selected_track]);
-                }
-
-                if (shift && IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
-                    for (size_t i = 0; i < pl->tracks.count; i++) {
-                        audio_enqueue_single(&wisp->audio, pl->tracks.items[i]);
-                    }
-                }
-                if (!shift && IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
-                    audio_enqueue_single(&wisp->audio, pl->tracks.items[wisp->pl_selected_track]);
-                }
-            }
+            playlist_pane_update(&wisp->playlist_pane, (Rectangle){.width = WW, .height = WH}, &wisp->playlists, &wisp->audio);
         }
         wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * SCROLL_SMOOTH;
         wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * SCROLL_SMOOTH;
-        wisp->pl_list_offset += (wisp->pl_list_wanted_offset - wisp->pl_list_offset) * SCROLL_SMOOTH;
-        wisp->pl_track_scroll += (wisp->pl_track_wanted_scroll - wisp->pl_track_scroll) * SCROLL_SMOOTH;
     }
 
 
@@ -288,15 +205,15 @@ void wisp_tick(Wisp* wisp) {
     switch (wisp->pane) {
         case PANE_MAIN: {
             {
-                BeginScissorMode(0, 0, (int)(WW / 3 - BORDER_PAD), (int)WH);
-                Vector2 cursor = {BORDER_PAD, BORDER_PAD - wisp->actual_album_offset - (FONT_SIZE + 64)};
+                BeginScissorMode(0, 0, (int)(WW / 3 - PAD), (int)WH);
+                Vector2 cursor = {PAD, PAD - wisp->actual_album_offset - (FONT_SIZE + 64)};
                 for (size_t ai = 0; ai < wisp->library.albums.count; ai++) {
                     const bool focused = (ai == wisp->selected_album);
                     const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-                    const Rectangle bg_rect = {cursor.x - 2, cursor.y, WW / 3 - BORDER_PAD * 2, FONT_SIZE + 4 + 64};
+                    const Rectangle bg_rect = {cursor.x - 2, cursor.y, WW / 3 - PAD * 2, FONT_SIZE + 4 + 64};
                     const Color bg_color = focused ? UNFOCUSED_PANEL_COLOR : FOCUSED_PANEL_COLOR;
                     const Rectangle cover_src = {0, 0, (float)wisp->covers[ai].width, (float)wisp->covers[ai].height};
-                    const Rectangle cover_dst = {BORDER_PAD + BORDER_PAD / 2, cursor.y + 14, 64, 64};
+                    const Rectangle cover_dst = {PAD + PAD / 2, cursor.y + 14, 64, 64};
                     DrawRectangleRounded(bg_rect, RECTANGLE_ROUNDNESS, 16, bg_color);
                     DrawTexturePro(wisp->covers[ai], cover_src, cover_dst, (Vector2){0}, 0, WHITE);
                     DrawTextPro(wisp->font, wisp->library.albums.items[ai].name, cursor,
@@ -308,12 +225,12 @@ void wisp_tick(Wisp* wisp) {
                 EndScissorMode();
             }
             {
-                Vector2 cursor = {BORDER_PAD + WW / 3, BORDER_PAD - wisp->track_scroll};
-                BeginScissorMode((int)(cursor.x - 3 * BORDER_PAD), 0, (int)((WW * 2) / 3 + BORDER_PAD), (int)WH);
+                Vector2 cursor = {PAD + WW / 3, PAD - wisp->track_scroll};
+                BeginScissorMode((int)(cursor.x - 3 * PAD), 0, (int)((WW * 2) / 3 + PAD), (int)WH);
                 for (size_t ti = 0; ti < wisp_get_selected_album(wisp)->tracks.count; ti++) {
                     const bool focused = (ti == wisp->selected_track);
                     const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-                    const Rectangle bg_rect = {cursor.x - 2, cursor.y, 2 * (WW / 3) - BORDER_PAD * 2, FONT_SIZE + 4};
+                    const Rectangle bg_rect = {cursor.x - 2, cursor.y, 2 * (WW / 3) - PAD * 2, FONT_SIZE + 4};
                     DrawRectangleRounded(bg_rect, RECTANGLE_ROUNDNESS, 16, FOCUSED_PANEL_COLOR);
                     DrawTextPro(wisp->font, wisp_get_selected_album(wisp)->tracks.items[ti]->title, cursor,
                                 (Vector2){-3, -3}, 0, FONT_SIZE, 0, SHADOW_COLOR);
@@ -334,7 +251,7 @@ void wisp_tick(Wisp* wisp) {
             break;
         }
         case PANE_PLAYLIST: {
-            wisp_draw_playlist_pane(wisp);
+            playlist_pane_draw(&wisp->playlist_pane, (Rectangle){.width = WW, .height = WH}, wisp->font, &wisp->playlists);
             break;
         }
         case PANE_COUNT: assert(false);
@@ -421,63 +338,10 @@ Wisp wisp_init(int argc, char** argv) {
         .cli_config = cfg,
         .playlists = playlists,
         .playlist_dir = pl_dir,
-        .pl_pane = MP_ALBUM,
     };
 }
 
 
-static void wisp_draw_playlist_pane(Wisp* wisp) {
-    const float WW = (float)GetScreenWidth();
-    const float WH = (float)GetScreenHeight();
-
-    if (wisp->playlists.count == 0) {
-        const char* msg = "No playlists yet.  Press 'a' in the main pane to add tracks.";
-        Vector2 sz = MeasureTextEx(wisp->font, msg, FONT_SIZE, 0);
-        DrawTextEx(wisp->font, msg, (Vector2){(WW - sz.x) * 0.5f, (WH - sz.y) * 0.5f}, FONT_SIZE, 0,
-                   FOCUSED_TEXT_COLOR);
-        return;
-    }
-
-    {
-        BeginScissorMode(0, 0, (int)(WW / 3 - BORDER_PAD), (int)WH);
-        Vector2 cursor = {BORDER_PAD, BORDER_PAD - wisp->pl_list_offset};
-        for (size_t pi = 0; pi < wisp->playlists.count; pi++) {
-            const bool focused = (pi == wisp->pl_selected_playlist);
-            const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-            const Color bg_color = focused ? UNFOCUSED_PANEL_COLOR : FOCUSED_PANEL_COLOR;
-            const Rectangle bg = {cursor.x - 2, cursor.y, WW / 3 - BORDER_PAD * 2, FONT_SIZE + 4};
-            DrawRectangleRounded(bg, RECTANGLE_ROUNDNESS, 16, bg_color);
-            DrawTextPro(wisp->font, wisp->playlists.items[pi].name, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
-                        SHADOW_COLOR);
-            DrawTextPro(wisp->font, wisp->playlists.items[pi].name, cursor, (Vector2){-2, -2}, 0, FONT_SIZE, 0,
-                        text_color);
-            cursor.y += TRACK_ENTRY_H;
-        }
-        EndScissorMode();
-    }
-
-    {
-        const Playlist* pl = &wisp->playlists.items[wisp->pl_selected_playlist];
-        Vector2 cursor = {BORDER_PAD + WW / 3, BORDER_PAD - wisp->pl_track_scroll};
-        BeginScissorMode((int)(cursor.x - 3 * BORDER_PAD), 0, (int)((WW * 2) / 3 + BORDER_PAD), (int)WH);
-
-        if (pl->tracks.count == 0) {
-            DrawTextEx(wisp->font, "Playlist is empty.", (Vector2){cursor.x, cursor.y}, FONT_SIZE, 0,
-                       UNFOCUSED_TEXT_COLOR);
-        }
-        for (size_t ti = 0; ti < pl->tracks.count; ti++) {
-            const bool focused = (ti == wisp->pl_selected_track && wisp->pl_pane == MP_TRACK);
-            const Color tc = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-            const Rectangle bg = {cursor.x - 2, cursor.y, 2 * (WW / 3) - BORDER_PAD * 2, FONT_SIZE + 4};
-            DrawRectangleRounded(bg, RECTANGLE_ROUNDNESS, 16, FOCUSED_PANEL_COLOR);
-            DrawTextPro(wisp->font, pl->tracks.items[ti]->title, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
-                        SHADOW_COLOR);
-            DrawTextPro(wisp->font, pl->tracks.items[ti]->title, cursor, (Vector2){-2, -2}, 0, FONT_SIZE, 0, tc);
-            cursor.y += TRACK_ENTRY_H;
-        }
-        EndScissorMode();
-    }
-}
 
 static void wisp_draw_visual_pane(Wisp* wisp) {
     const Rectangle fft_rect = {0, -(float)GetScreenHeight(), (float)GetScreenWidth(), (float)GetScreenHeight() * 2};
