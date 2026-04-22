@@ -4,7 +4,8 @@
 #include <stdlib.h>
 #include "library.h"
 #include "playlist.h"
-#include "config.h"
+
+#include "compile_time_config.h"
 
 typedef enum {
     OVERLAY_NONE,

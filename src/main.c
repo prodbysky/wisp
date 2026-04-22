@@ -10,7 +10,7 @@
 #include <time.h>
 
 #include "audio.h"
-#include "config.h"
+#include "compile_time_config.h"
 #include "fft.h"
 #include "library.h"
 #include "playlist.h"
