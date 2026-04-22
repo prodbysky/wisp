@@ -11,12 +11,13 @@
 
 #include "audio.h"
 #include "compile_time_config.h"
-#include "runtime_config.h"
+#include "draw_utils.h"
 #include "fft.h"
 #include "library.h"
 #include "playlist.h"
 #include "playlist_overlay.h"
 #include "playlist_pane.h"
+#include "runtime_config.h"
 
 typedef enum {
     PANE_MAIN,
@@ -30,7 +31,6 @@ typedef enum {
     MP_ALBUM,
     MP_TRACK,
 } MainPane;
-
 
 typedef struct {
     Config cli_config;
@@ -99,7 +99,6 @@ int main(int argc, char** argv) {
     CloseWindow();
     return 0;
 }
-
 
 void wisp_tick(Wisp* wisp) {
     const float WW = (float)GetScreenWidth();
@@ -190,12 +189,12 @@ void wisp_tick(Wisp* wisp) {
         }
 
         if (wisp->pane == PANE_PLAYLIST) {
-            playlist_pane_update(&wisp->playlist_pane, (Rectangle){.width = WW, .height = WH}, &wisp->playlists, &wisp->audio);
+            playlist_pane_update(&wisp->playlist_pane, (Rectangle){.width = WW, .height = WH}, &wisp->playlists,
+                                 &wisp->audio);
         }
         wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * SCROLL_SMOOTH;
         wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * SCROLL_SMOOTH;
     }
-
 
     prepare_fft_vis(wisp);
     audio_update(&wisp->audio);
@@ -216,10 +215,8 @@ void wisp_tick(Wisp* wisp) {
                     const Rectangle cover_dst = {PAD + PAD / 2, cursor.y + 14, 64, 64};
                     draw_round_rect(bg_rect, bg_color, RECTANGLE_ROUNDNESS);
                     DrawTexturePro(wisp->covers[ai], cover_src, cover_dst, (Vector2){0}, 0, WHITE);
-                    DrawTextPro(wisp->font, wisp->library.albums.items[ai].name, cursor,
-                                (Vector2){-3 - 64 - 4 - 4, -3 - 32}, 0, FONT_SIZE, 0, SHADOW_COLOR);
-                    DrawTextPro(wisp->font, wisp->library.albums.items[ai].name, cursor,
-                                (Vector2){-2 - 64 - 4 - 4, -2 - 32}, 0, FONT_SIZE, 0, text_color);
+                    draw_text_with_shadow(wisp->library.albums.items[ai].name, wisp->font, text_color, SHADOW_COLOR,
+                                          (Vector2){.x = cursor.x + 74, .y = cursor.y + 34});
                     cursor.y += ALBUM_ENTRY_H;
                 }
                 EndScissorMode();
@@ -232,10 +229,9 @@ void wisp_tick(Wisp* wisp) {
                     const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
                     const Rectangle bg_rect = {cursor.x - 2, cursor.y, 2 * (WW / 3) - PAD * 2, FONT_SIZE + 4};
                     draw_round_rect(bg_rect, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-                    DrawTextPro(wisp->font, wisp_get_selected_album(wisp)->tracks.items[ti]->title, cursor,
-                                (Vector2){-3, -3}, 0, FONT_SIZE, 0, SHADOW_COLOR);
-                    DrawTextPro(wisp->font, wisp_get_selected_album(wisp)->tracks.items[ti]->title, cursor,
-                                (Vector2){-2, -2}, 0, FONT_SIZE, 0, text_color);
+
+                    draw_text_with_shadow(wisp_get_selected_album(wisp)->tracks.items[ti]->title, wisp->font,
+                                          text_color, SHADOW_COLOR, (Vector2){.x = cursor.x + 2, .y = cursor.y + 2});
                     cursor.y += TRACK_ENTRY_H;
                 }
                 EndScissorMode();
@@ -251,13 +247,16 @@ void wisp_tick(Wisp* wisp) {
             break;
         }
         case PANE_PLAYLIST: {
-            playlist_pane_draw(&wisp->playlist_pane, (Rectangle){.width = WW, .height = WH}, wisp->font, &wisp->playlists);
+            playlist_pane_draw(&wisp->playlist_pane, (Rectangle){.width = WW, .height = WH}, wisp->font,
+                               &wisp->playlists);
             break;
         }
         case PANE_COUNT: assert(false);
     }
 
-    if (wisp->overlay.mode != OVERLAY_NONE) overlay_draw(&wisp->overlay, (Rectangle){.width = GetScreenWidth(), .height = GetScreenHeight()}, wisp->font, &wisp->playlists);
+    if (wisp->overlay.mode != OVERLAY_NONE)
+        overlay_draw(&wisp->overlay, (Rectangle){.width = GetScreenWidth(), .height = GetScreenHeight()}, wisp->font,
+                     &wisp->playlists);
 
     EndDrawing();
 }
@@ -356,12 +355,11 @@ static void wisp_draw_visual_pane(Wisp* wisp) {
     const char* album = wisp->audio.current_track->album;
     const char* artist = wisp->audio.current_track->artist;
     draw_fft(wisp, fft_rect);
-    DrawTextEx(wisp->font, title, (Vector2){8, 8}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
-    DrawTextEx(wisp->font, album, (Vector2){8, 40}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
-    DrawTextEx(wisp->font, artist, (Vector2){8, 72}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
-    DrawTextEx(wisp->font, title, (Vector2){8 + 2, 10}, FONT_SIZE, 0, SHADOW_COLOR);
-    DrawTextEx(wisp->font, album, (Vector2){8 + 2, 42}, FONT_SIZE, 0, SHADOW_COLOR);
-    DrawTextEx(wisp->font, artist, (Vector2){8 + 2, 74}, FONT_SIZE, 0, SHADOW_COLOR);
+
+    draw_text_with_shadow(title, wisp->font, FOCUSED_TEXT_COLOR, SHADOW_COLOR, (Vector2){.x = 8, .y = 8});
+    draw_text_with_shadow(album, wisp->font, FOCUSED_TEXT_COLOR, SHADOW_COLOR, (Vector2){.x = 8, .y = 40});
+
+    draw_text_with_shadow(artist, wisp->font, FOCUSED_TEXT_COLOR, SHADOW_COLOR, (Vector2){.x = 8, .y = 72});
 }
 
 static void wisp_next_pane(Wisp* wisp) { wisp->pane = (wisp->pane + 1) % PANE_COUNT; }
@@ -412,9 +410,10 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
 
     if (w->audio.current_track) {
         Rectangle rect = {bound.x, center_y, (float)GetScreenWidth() - bound.x * 2, FONT_SIZE + 4};
-            draw_round_rect(rect, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-        DrawTextEx(w->font, w->audio.current_track->title, (Vector2){bound.x + 5, center_y + 3}, FONT_SIZE, 0,
-                   FOCUSED_TEXT_COLOR);
+        draw_round_rect(rect, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
+
+        draw_text_with_shadow(w->audio.current_track->title, w->font, FOCUSED_TEXT_COLOR, SHADOW_COLOR,
+                              (Vector2){.x = bound.x + 5, .y = center_y + 3});
     }
 
     for (size_t i = 0; i < w->audio.queue.history.items.count; i++) {
@@ -422,16 +421,17 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
         float y = center_y - item_height * (float)(i + 1);
         Rectangle rect = {bound.x, y, (float)GetScreenWidth() - bound.x * 2, FONT_SIZE + 4};
         draw_round_rect(rect, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-        DrawTextEx(w->font, w->audio.queue.history.items.items[idx]->title, (Vector2){bound.x + 5, y + 3}, FONT_SIZE, 0,
-                   ColorBrightness(FOCUSED_TEXT_COLOR, -0.2f));
+        draw_text_with_shadow(w->audio.queue.history.items.items[idx]->title, w->font, UNFOCUSED_TEXT_COLOR,
+                              SHADOW_COLOR, (Vector2){.x = bound.x + 5, .y = y + 3});
     }
 
     for (size_t i = 0; i < w->audio.queue.upcoming.items.count; i++) {
         float y = center_y + item_height * (float)(i + 1);
         Rectangle rect = {bound.x, y, (float)GetScreenWidth() - bound.x * 2, FONT_SIZE + 4};
         draw_round_rect(rect, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-        DrawTextEx(w->font, w->audio.queue.upcoming.items.items[i]->title, (Vector2){bound.x + 5, y + 3}, FONT_SIZE, 0,
-                   ColorBrightness(FOCUSED_TEXT_COLOR, -0.2f));
+
+        draw_text_with_shadow(w->audio.queue.upcoming.items.items[i]->title, w->font, UNFOCUSED_TEXT_COLOR,
+                              SHADOW_COLOR, (Vector2){.x = bound.x + 5, .y = y + 3});
     }
 }
 

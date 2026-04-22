@@ -1,12 +1,12 @@
-#include <stddef.h>
 #include <raylib.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "library.h"
-#include "playlist.h"
-#include "draw_utils.h"
 
 #include "compile_time_config.h"
+#include "draw_utils.h"
+#include "library.h"
+#include "playlist.h"
 
 typedef enum {
     OVERLAY_NONE,
@@ -32,7 +32,8 @@ typedef struct {
     size_t pending_track_idx;
 } Overlay;
 
-void overlay_open(Overlay* overlay, bool whole_album, size_t selected_album, size_t selected_track, const Playlists* playlists);
+void overlay_open(Overlay* overlay, bool whole_album, size_t selected_album, size_t selected_track,
+                  const Playlists* playlists);
 void overlay_close(Overlay* overlay);
 void overlay_rebuild_filter(Overlay* overlay, const Playlists* playlists);
 void overlay_handle_char(Overlay* overlay, int ch, const Playlists* playlists);
@@ -41,7 +42,7 @@ void overlay_confirm(Overlay* overlay, Playlists* playlists, const char* playlis
 void overlay_update(Overlay* overlay, Playlists* playlists, const char* playlists_dir, const Albums* albums) {
     const bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-    if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE))&& overlay->buf_len > 0) {
+    if ((IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE)) && overlay->buf_len > 0) {
         overlay->buf[--overlay->buf_len] = 0;
         overlay_rebuild_filter(overlay, playlists);
     }
@@ -50,15 +51,14 @@ void overlay_update(Overlay* overlay, Playlists* playlists, const char* playlist
         return;
     }
     if (overlay->mode == OVERLAY_PLAYLIST_PICK) {
-        if (IsKeyPressed(KEY_J) && overlay->selected + 1 < overlay->filtered_count)
-            overlay->selected++;
+        if (IsKeyPressed(KEY_J) && overlay->selected + 1 < overlay->filtered_count) overlay->selected++;
         if (IsKeyPressed(KEY_K) && overlay->selected > 0) overlay->selected--;
         if (ctrl && IsKeyPressed(KEY_N)) {
             overlay->mode = OVERLAY_PLAYLIST_NEW;
             overlay->buf_len = 0;
             overlay->buf[0] = '\0';
         }
-    } 
+    }
     if (IsKeyPressed(KEY_ENTER)) overlay_confirm(overlay, playlists, playlists_dir, albums);
     int ch = 0;
     while ((ch = GetCharPressed()) != 0) {
@@ -79,37 +79,31 @@ void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Play
     const float box_y = bound.height * 0.15f;
     const float line_h = FONT_SIZE + 8.0f;
 
-    Vector2 cursor = (Vector2){
-        .x = box_x + PAD,
-        .y = box_y + PAD
-    };
+    Vector2 cursor = (Vector2){.x = box_x + PAD, .y = box_y + PAD};
 
     switch (overlay->mode) {
         case OVERLAY_PLAYLIST_NEW: {
-            const Rectangle box = {
-                .x = box_x,
-                .y = box_y,
-                .width = box_w,
-                .height = 3.5f * line_h
-            };
+            const Rectangle box = {.x = box_x, .y = box_y, .width = box_w, .height = 3.5f * line_h};
             {
-
                 draw_round_rect(box, UNFOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-                DrawTextEx(font, "new playlist name:", cursor, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
+
+                draw_text_with_shadow("new playlist name:", font, FOCUSED_TEXT_COLOR, SHADOW_COLOR, cursor);
                 cursor.y += line_h;
             }
             {
-                draw_round_rect((Rectangle){cursor.x, cursor.y, box.width - 2 * PAD, line_h}, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-                DrawTextEx(font, overlay->buf, (Vector2){cursor.x + PAD, cursor.y + 4}, FONT_SIZE, 0,
-                           FOCUSED_TEXT_COLOR);
+                draw_round_rect((Rectangle){cursor.x, cursor.y, box.width - 2 * PAD, line_h}, FOCUSED_PANEL_COLOR,
+                                RECTANGLE_ROUNDNESS);
+
+                draw_text_with_shadow(overlay->buf, font, FOCUSED_TEXT_COLOR, SHADOW_COLOR,
+                                      (Vector2){cursor.x + PAD, cursor.y + 4});
                 if ((int)(GetTime() * 2) % 2 == 0) {
                     float cx = box_x + 16 + MeasureTextEx(font, overlay->buf, FONT_SIZE, 0).x;
                     DrawRectangle((int)cx, (int)(cursor.y + 4), 2, FONT_SIZE, FOCUSED_TEXT_COLOR);
                 }
                 cursor.y += line_h;
             }
-            DrawTextEx(font, "[Enter] confirm   [Esc] cancel", (Vector2){cursor.x, cursor.y + PAD},
-                       FONT_SIZE, 0, UNFOCUSED_TEXT_COLOR);
+            draw_text_with_shadow("[Enter] confirm  [Esc] cancel", font, UNFOCUSED_TEXT_COLOR, SHADOW_COLOR,
+                                  (Vector2){cursor.x, cursor.y + PAD});
             break;
         }
         case OVERLAY_PLAYLIST_PICK: {
@@ -118,38 +112,44 @@ void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Play
             const float height = line_h * (visible * 4);
 
             draw_round_rect((Rectangle){box_x, box_y, box_w, height}, UNFOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-            draw_round_rect((Rectangle){box_x + PAD, box_y + PAD, box_w - 2 * PAD, line_h}, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
+            draw_round_rect((Rectangle){box_x + PAD, box_y + PAD, box_w - 2 * PAD, line_h}, FOCUSED_PANEL_COLOR,
+                            RECTANGLE_ROUNDNESS);
             const char* placeholder = "Search playlist…";
             const char* search_text = overlay->buf_len > 0 ? overlay->buf : placeholder;
             Color search_col = overlay->buf_len > 0 ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-            DrawTextEx(font, search_text, (Vector2){box_x + 16, box_y + (float)(PAD * 1.5)}, FONT_SIZE, 0, search_col);
+
+            draw_text_with_shadow(search_text, font, search_col, SHADOW_COLOR,
+                                  (Vector2){box_x + 2 * PAD, box_y + (float)(PAD * 1.5)});
             if (overlay->buf_len > 0 && (int)(GetTime() * 2) % 2 == 0) {
                 float cx = box_x + 16 + MeasureTextEx(font, overlay->buf, FONT_SIZE, 0).x;
                 DrawRectangle((int)cx, (int)(box_y + 10), 2, FONT_SIZE, FOCUSED_TEXT_COLOR);
             }
             float ry = box_y + line_h + 8;
             if (overlay->filtered_count == 0) {
-                DrawTextEx(font, "No playlists found.", (Vector2){box_x + 16, ry + 4}, FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
+                draw_text_with_shadow("no playlists found.", font, FOCUSED_TEXT_COLOR, SHADOW_COLOR,
+                                      (Vector2){box_x + 2 * PAD, ry + (float)(PAD * .5)});
             } else {
                 for (size_t i = 0; i < 8 && i < overlay->filtered_count; i++) {
                     size_t pi = overlay->filtered_indices[i];
                     const bool sel = (i == overlay->selected);
                     Color rect_color = sel ? FOCUSED_PANEL_COLOR : UNFOCUSED_PANEL_COLOR;
                     if (sel)
-                        draw_round_rect((Rectangle){box_x + PAD, ry + PAD, box_w - 2 * PAD, line_h}, rect_color, RECTANGLE_ROUNDNESS);
+                        draw_round_rect((Rectangle){box_x + PAD, ry + PAD, box_w - 2 * PAD, line_h}, rect_color,
+                                        RECTANGLE_ROUNDNESS);
                     Color tc = sel ? UNFOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
-                    DrawTextEx(font, playlists->items[pi].name, (Vector2){box_x + 16, ry + (float)(PAD * 1.5)}, FONT_SIZE, 0, tc);
+
+                    draw_text_with_shadow(playlists->items[pi].name, font, tc, SHADOW_COLOR,
+                                          (Vector2){box_x + 2 * PAD, ry + (float)(PAD * 1.5)});
                     ry += line_h;
                 }
             }
 
-            DrawTextEx(font, "[C-n] new   [Enter] add   [Esc] cancel", (Vector2){box_x + 12, box_y + height - line_h + 4},
-                       FONT_SIZE, 0, FOCUSED_TEXT_COLOR);
+            draw_text_with_shadow("[C-n] new   [Enter] add   [Esc] cancel", font, FOCUSED_TEXT_COLOR, SHADOW_COLOR,
+                                  (Vector2){box_x + (float)(1.5 * PAD), box_y + height - line_h + PAD / 2});
             break;
         }
     }
 }
-
 
 void overlay_rebuild_filter(Overlay* overlay, const Playlists* playlists) {
     free(overlay->filtered_indices);
@@ -170,7 +170,8 @@ void overlay_rebuild_filter(Overlay* overlay, const Playlists* playlists) {
     }
 }
 
-void overlay_open(Overlay* overlay, bool whole_album, size_t selected_album, size_t selected_track, const Playlists* playlists) {
+void overlay_open(Overlay* overlay, bool whole_album, size_t selected_album, size_t selected_track,
+                  const Playlists* playlists) {
     overlay->mode = OVERLAY_PLAYLIST_PICK;
     overlay->buf_len = 0;
     overlay->buf[0] = '\0';

@@ -1,7 +1,9 @@
+#include <raymath.h>
+
 #include "audio.h"
-#include "playlist.h"
 #include "compile_time_config.h"
 #include "draw_utils.h"
+#include "playlist.h"
 
 typedef enum {
     PPS_PLAYLIST,
@@ -24,7 +26,8 @@ void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* 
     if (pane->selected_pane == PPS_PLAYLIST) {
         const Playlist* pl = &playlists->items[pane->selected_playlist];
 
-        if (IsKeyPressed(KEY_J) && playlists->count > 0 && pane->selected_playlist < playlists->count - 1) pane->selected_playlist++;
+        if (IsKeyPressed(KEY_J) && playlists->count > 0 && pane->selected_playlist < playlists->count - 1)
+            pane->selected_playlist++;
 
         if (IsKeyPressed(KEY_K) && pane->selected_playlist > 0) {
             if (pane->selected_playlist > 0) pane->selected_playlist--;
@@ -35,9 +38,7 @@ void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* 
         }
 
         if (IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
-            for (size_t i = 0; i < pl->tracks.count; i++) {
-                audio_enqueue_single(audio, pl->tracks.items[i]);
-            }
+            for (size_t i = 0; i < pl->tracks.count; i++) { audio_enqueue_single(audio, pl->tracks.items[i]); }
         }
 
         {
@@ -68,8 +69,7 @@ void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* 
         if (cur_off > bottom) pane->tracklist_target_offset = cur_off - (bound.height - eh);
 
         if (IsKeyPressed(KEY_J)) {
-            if (pl->tracks.count > 0 && pane->selected_track < pl->tracks.count - 1)
-                pane->selected_track++;
+            if (pl->tracks.count > 0 && pane->selected_track < pl->tracks.count - 1) pane->selected_track++;
         }
         if (IsKeyPressed(KEY_K)) {
             if (pane->selected_track > 0) pane->selected_track--;
@@ -81,9 +81,7 @@ void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* 
         }
 
         if (shift && IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
-            for (size_t i = 0; i < pl->tracks.count; i++) {
-                audio_enqueue_single(audio, pl->tracks.items[i]);
-            }
+            for (size_t i = 0; i < pl->tracks.count; i++) { audio_enqueue_single(audio, pl->tracks.items[i]); }
         }
         if (!shift && IsKeyPressed(KEY_Q) && pl->tracks.count > 0) {
             audio_enqueue_single(audio, pl->tracks.items[pane->selected_track]);
@@ -96,9 +94,11 @@ void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* 
 void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, const Playlists* playlists) {
     if (playlists->count == 0) {
         const char* msg = "No playlists yet.  Press 'a' in the main pane to add tracks.";
+
         Vector2 sz = MeasureTextEx(font, msg, FONT_SIZE, 0);
-        DrawTextEx(font, msg, (Vector2){(bound.width - sz.x) * 0.5f, (bound.height - sz.y) * 0.5f}, FONT_SIZE, 0,
-                   FOCUSED_TEXT_COLOR);
+
+        draw_text_with_shadow(msg, font, FOCUSED_TEXT_COLOR, SHADOW_COLOR,
+                              (Vector2){bound.width - sz.x / 2, (bound.height - sz.y) / 2});
         return;
     }
 
@@ -112,10 +112,8 @@ void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, co
             const Rectangle bg = {cursor.x - 2, cursor.y, bound.width / 3 - PAD * 2, FONT_SIZE + 4};
 
             draw_round_rect(bg, bg_color, RECTANGLE_ROUNDNESS);
-            DrawTextPro(font, playlists->items[pi].name, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
-                        SHADOW_COLOR);
-            DrawTextPro(font, playlists->items[pi].name, cursor, (Vector2){-2, -2}, 0, FONT_SIZE, 0,
-                        text_color);
+            draw_text_with_shadow(playlists->items[pi].name, font, text_color, SHADOW_COLOR,
+                                  Vector2SubtractValue(cursor, -2));
             cursor.y += TRACK_ENTRY_H;
         }
         EndScissorMode();
@@ -127,8 +125,7 @@ void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, co
         BeginScissorMode((int)(cursor.x - 3 * PAD), 0, (int)((bound.width * 2) / 3 + PAD), (int)bound.height);
 
         if (pl->tracks.count == 0) {
-            DrawTextEx(font, "Playlist is empty.", (Vector2){cursor.x, cursor.y}, FONT_SIZE, 0,
-                       UNFOCUSED_TEXT_COLOR);
+            draw_text_with_shadow("playlist is empty.", font, UNFOCUSED_TEXT_COLOR, SHADOW_COLOR, cursor);
         }
         for (size_t ti = 0; ti < pl->tracks.count; ti++) {
             const bool focused = (ti == pane->selected_track && pane->selected_pane == PPS_TRACK);
@@ -136,9 +133,8 @@ void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, co
             const Rectangle bg = {cursor.x - 2, cursor.y, 2 * (bound.width / 3) - PAD * 2, FONT_SIZE + 4};
 
             draw_round_rect(bg, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
-            DrawTextPro(font, pl->tracks.items[ti]->title, cursor, (Vector2){-3, -3}, 0, FONT_SIZE, 0,
-                        SHADOW_COLOR);
-            DrawTextPro(font, pl->tracks.items[ti]->title, cursor, (Vector2){-2, -2}, 0, FONT_SIZE, 0, tc);
+            draw_text_with_shadow(pl->tracks.items[ti]->title, font, tc, SHADOW_COLOR,
+                                  Vector2SubtractValue(cursor, -2));
             cursor.y += TRACK_ENTRY_H;
         }
         EndScissorMode();

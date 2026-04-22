@@ -13,4 +13,3 @@
 #define BACKGROUND_COLOR GetColor(0x181818ff)
 #define FOCUSED_TEXT_COLOR GetColor(0xccccccff)
 #define UNFOCUSED_TEXT_COLOR GetColor(0x888888ff)
-
