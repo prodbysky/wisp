@@ -294,8 +294,9 @@ Wisp wisp_init(int argc, char** argv) {
         }
         closedir(d);
     }
-
+    double config_setup_time = GetTime();
     Library lib = prepare_library(cfg.custom_root_path);
+    double library_load_time = GetTime();
 
     SetWindowState(FLAG_MSAA_4X_HINT);
     InitWindow(1280, 720, "wispy");
@@ -323,11 +324,18 @@ Wisp wisp_init(int argc, char** argv) {
         tex[i] = LoadTextureFromImage(img);
     }
 
+    double pre_playlist_load = GetTime();
     char* pl_dir = playlist_dir_path(cfg.custom_playlist_dir);
     playlist_ensure_dir(pl_dir);
 
     Playlists playlists = {0};
     playlists_load(pl_dir, &lib, &playlists);
+    double post_playlist_load = GetTime();
+
+    TraceLog(LOG_INFO, "Putting together config took %lf s.", config_setup_time);
+    TraceLog(LOG_INFO, "Loading music library took %lf s.", library_load_time - config_setup_time);
+    TraceLog(LOG_INFO, "Loading playlist library took %lf s.", post_playlist_load - pre_playlist_load);
+    TraceLog(LOG_INFO, "Our code took %lf s. to startup", post_playlist_load);
 
     return (Wisp){
         .font = font,
@@ -340,8 +348,6 @@ Wisp wisp_init(int argc, char** argv) {
         .playlist_dir = pl_dir,
     };
 }
-
-
 
 static void wisp_draw_visual_pane(Wisp* wisp) {
     const Rectangle fft_rect = {0, -(float)GetScreenHeight(), (float)GetScreenWidth(), (float)GetScreenHeight() * 2};
