@@ -307,7 +307,7 @@ Wisp wisp_init(int argc, char** argv) {
     SetTargetFPS(180);
     AttachAudioMixedProcessor(fill_fft_buffer_callback);
 
-    Font font = LoadFontEx("res/Iosevka.ttf", FONT_SIZE, NULL, 0);
+    Font font = LoadFontEx("res/Vollkorn-Medium.ttf", FONT_SIZE, NULL, 0);
     SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
 
     Texture2D* tex = malloc(lib.albums.count * sizeof(Texture2D));
