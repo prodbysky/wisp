@@ -119,10 +119,7 @@ void wisp_tick(Wisp* wisp) {
 
     if (wisp->overlay.mode != OVERLAY_NONE) {
         overlay_update(&wisp->overlay, &wisp->playlists, wisp->playlist_dir, &wisp->library.albums);
-        goto draw;
-    }
-
-    {
+    } else {
         const bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
         const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
 
@@ -276,14 +273,13 @@ void wisp_tick(Wisp* wisp) {
                 }
             }
         }
+        wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * SCROLL_SMOOTH;
+        wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * SCROLL_SMOOTH;
+        wisp->pl_list_offset += (wisp->pl_list_wanted_offset - wisp->pl_list_offset) * SCROLL_SMOOTH;
+        wisp->pl_track_scroll += (wisp->pl_track_wanted_scroll - wisp->pl_track_scroll) * SCROLL_SMOOTH;
     }
 
-    wisp->actual_album_offset += (wisp->wanted_album_offset - wisp->actual_album_offset) * SCROLL_SMOOTH;
-    wisp->track_scroll += (wisp->wanted_track_scroll - wisp->track_scroll) * SCROLL_SMOOTH;
-    wisp->pl_list_offset += (wisp->pl_list_wanted_offset - wisp->pl_list_offset) * SCROLL_SMOOTH;
-    wisp->pl_track_scroll += (wisp->pl_track_wanted_scroll - wisp->pl_track_scroll) * SCROLL_SMOOTH;
 
-draw:
     prepare_fft_vis(wisp);
     audio_update(&wisp->audio);
     BeginDrawing();
