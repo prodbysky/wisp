@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
                "src/library.c",
                "src/audio.c",
                "src/playlist.c",
+               "src/draw_utils.c",
                "-o", "build/wisp",
                "-lm",
                "-Lextern/raylib/src/",
