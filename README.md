@@ -1,44 +1,88 @@
 # Wisp
-Kinda weird local music player, that I made because (IN MY OPINION)
-most linux players suck, tauon is slow, strawberry uses QT, VLC feels bad to use
+
+A keyboard-driven music player for Linux, built because most existing options felt slow, heavy, or awkward to use. Supports FLAC and MP3 with album art, playlists, crossfade, shuffle, and an FFT visualizer.
 
 ## Building
-```bash
-    gcc nob.c -o nob
-    ./nob
-```
 
-### Dependencies
-- libFLAC
-- X11
+```bash
+gcc nob.c -o nob
+./nob
+```
 
 ## Usage
-By default wisp assumes $(HOME)/Music is where your music is stored.
-If you desire to put it else where pass the path (where your music is) as the first argument to wisp.
+```bash
+./build/wisp                  # uses ~/Music by default
+./build/wisp --path /path/to/music
+./build/wisp --playlist-dir /path/to/playlists
+./build/wisp --help
+```
 
-## Config
-Wisp will search for its .conf file in $(HOME)/.config/wisp.conf
-The config is line based. And for now it only can configure your music root path.
-To specify it:
-wisp.conf
+## Configuration
+
+Wisp reads `~/.config/wisp.conf` on startup. The file is line-based:
+
 ```
-library_path /home/shr/Downloaded
+library_path  /home/you/Music
+playlist_dir  /home/you/.wisp/playlists
 ```
+
+Command-line flags take precedence over the config file.
+
+Playlists are stored as standard `.m3u` files in `~/.wisp/playlists/` by default, and are saved on exit.
+
+## Interface
+
+The UI is split into four panes, cycled with `Tab`:
+
+- **Main** - two-column album/track browser
+- **Queue** - current playback queue with history
+- **Visual** - FFT spectrum visualizer, colored from the current album art
+- **Playlist** - saved playlist browser
 
 ### Keybinds
- - `h`       : move back to the album select column
- - `j`       : move down in the current column
- - `k`       : move up in the current column
- - `l`       : move to the track select column
- - `return`  : play the selected track
- - `q`       : queue the selected track
- - `S-q`     : queue the selected album from the current selected track
- - `tab`     : switch to next pane (main->queue->dft)
- - `space`   : toggle playing state
- - `.`       : skip current track forward
- - `,`       : skip current track backward
- - `>`       : seek playing track forwards by 5 seconds
- - `<`       : seek playing track backward by 5 seconds
- - `C-s`     : enable shuffling
- - `C-r`     : cycle loop mode
 
+#### Navigation
+
+| Key | Action |
+|-----|--------|
+| `h` | Move to album column (from track column) |
+| `j` | Move down |
+| `k` | Move up |
+| `l` | Move to track column (from album column) |
+| `Tab` | Cycle to next pane |
+
+#### Playback
+
+| Key | Action |
+|-----|--------|
+| `Return` | Play selected track |
+| `Space` | Toggle pause/resume |
+| `Shift+.` | Skip to next track |
+| `Shift+,` | Skip to previous track |
+| `>` | Seek forward 5 seconds |
+| `<` | Seek backward 5 seconds |
+| `Ctrl+s` | Toggle shuffle |
+| `Ctrl+r` | Cycle loop mode (none → one → all) |
+
+#### Queue
+
+| Key | Action |
+|-----|--------|
+| `q` | Queue selected track |
+| `Shift+Q` | Queue album from selected track onwards |
+
+#### Playlists
+
+| Key | Action |
+|-----|--------|
+| `a` | Open playlist picker to add selected track |
+| `Shift+A` | Open playlist picker to add album from selected track onwards |
+| `Ctrl+n` | (in picker) Create a new playlist |
+
+## Features
+
+- **FLAC and MP3** support with full tag reading (title, artist, album, track number, embedded cover art)
+- **Crossfade** between tracks (2-second smooth blend)
+- **FFT visualizer** with colors derived from the current album's cover art via k-means clustering
+- **Playlists** saved as standard `.m3u` files
+- **Shuffle** and three **loop modes**: none, repeat one, repeat all
