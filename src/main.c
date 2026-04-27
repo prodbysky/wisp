@@ -368,6 +368,7 @@ Wisp wisp_init(int argc, char** argv) {
     TraceLog(LOG_INFO, "Loading playlist library took %lf s.", post_playlist_load - pre_playlist_load);
     TraceLog(LOG_INFO, "Our code took %lf s. to startup", post_playlist_load);
 
+
     return (Wisp){.font = font,
                   .library = lib,
                   .covers = tex,

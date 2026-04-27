@@ -3,7 +3,7 @@
 #include <FLAC/metadata.h>
 #include <assert.h>
 #include <dirent.h>
-#include <pthread.h>
+#include <threads.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +22,7 @@ static bool filter(char* c);
 static void filter_paths(Paths* paths, bool (*pred)(char*));
 
 static Track process_track(const char* path);
-static void* worker(void* arg);
+static int worker(void* arg);
 
 static int compare_track_by_number(const void* a, const void* b) {
     const Track* const* t1 = a;
@@ -123,12 +123,16 @@ Library prepare_library(const char* root_path) {
     lib.tracks.items = malloc(sizeof(Track) * lib.ps.count);
 
     size_t thread_count = 6;
-    pthread_t threads[thread_count];
+    thrd_t threads[thread_count];
 
     WorkerCtx ctx = {.lib = &lib, .index = 0};
 
-    for (size_t i = 0; i < thread_count; i++) { pthread_create(&threads[i], NULL, worker, &ctx); }
-    for (size_t i = 0; i < thread_count; i++) { pthread_join(threads[i], NULL); }
+    for (size_t i = 0; i < thread_count; i++) { 
+        thrd_create(&threads[i], worker, &ctx);
+    }
+    for (size_t i = 0; i < thread_count; i++) { 
+        thrd_join(threads[i], NULL);
+    }
 
     // sort them by album
     for (size_t i = 0; i < lib.tracks.count; i++) {
@@ -193,7 +197,7 @@ void unload_library(Library* lib) {
     for (size_t i = 0; i < lib->ps.count; i++) { free(lib->ps.items[i]); }
 }
 
-static void* worker(void* arg) {
+static int worker(void* arg) {
     WorkerCtx* ctx = arg;
     Library* lib = ctx->lib;
 
@@ -204,7 +208,7 @@ static void* worker(void* arg) {
         lib->tracks.items[i] = process_track(lib->ps.items[i]);
     }
 
-    return NULL;
+    return 0;
 }
 
 static Track process_track(const char* path) {
