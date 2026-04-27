@@ -19,6 +19,11 @@ static Color* kmeans(Image image, int k, int max_it) {
     float* cg = (float*)malloc(k * sizeof(float));
     float* cb = (float*)malloc(k * sizeof(float));
 
+    float* sum_r = (float*)calloc(k, sizeof(float));
+    float* sum_g = (float*)calloc(k, sizeof(float));
+    float* sum_b = (float*)calloc(k, sizeof(float));
+    int* cnt = (int*)calloc(k, sizeof(int));
+
     if (!cr || !cg || !cb) {
         free(labels);
         UnloadImageColors(pixels);
@@ -54,19 +59,6 @@ static Color* kmeans(Image image, int k, int max_it) {
             labels[i] = best;
         }
 
-        float* sum_r = (float*)calloc(k, sizeof(float));
-        float* sum_g = (float*)calloc(k, sizeof(float));
-        float* sum_b = (float*)calloc(k, sizeof(float));
-        int* cnt = (int*)calloc(k, sizeof(int));
-
-        if (!sum_r || !sum_g || !sum_b || !cnt) {
-            free(sum_r);
-            free(sum_g);
-            free(sum_b);
-            free(cnt);
-            break;
-        }
-
         for (int i = 0; i < count; i++) {
             int c = labels[i];
             sum_r[c] += pixels[i].r;
@@ -88,10 +80,6 @@ static Color* kmeans(Image image, int k, int max_it) {
             }
         }
 
-        free(sum_r);
-        free(sum_g);
-        free(sum_b);
-        free(cnt);
     }
 
     Color* palette = (Color*)malloc(k * sizeof(Color));

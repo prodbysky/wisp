@@ -344,6 +344,7 @@ Wisp wisp_init(int argc, char** argv) {
             .mipmaps = 1,
         };
         tex[i] = LoadTextureFromImage(img);
+        free(t->cover);
     }
 
     Color** colors = malloc(sizeof(Color*) * lib.albums.count);
