@@ -1,6 +1,5 @@
 #include <raymath.h>
 
-#include "audio.h"
 #include "compile_time_config.h"
 #include "draw_utils.h"
 #include "playlist.h"
@@ -98,7 +97,7 @@ void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, co
         Vector2 sz = MeasureTextEx(font, msg, FONT_SIZE, 0);
 
         draw_text_with_shadow(msg, font, FOCUSED_TEXT_COLOR, SHADOW_COLOR,
-                              (Vector2){bound.width - sz.x / 2, (bound.height - sz.y) / 2});
+                              (Vector2){(bound.width - sz.x) / 2, (bound.height - sz.y) / 2});
         return;
     }
 

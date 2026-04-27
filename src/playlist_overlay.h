@@ -1,8 +1,8 @@
-#include <raylib.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "../extern/raylib/src/raylib.h"
 #include "compile_time_config.h"
 #include "draw_utils.h"
 #include "library.h"

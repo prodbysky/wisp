@@ -2,22 +2,25 @@
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
-#include <raylib.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+#include "../extern/raylib/src/raylib.h"
 #include "audio.h"
 #include "compile_time_config.h"
 #include "draw_utils.h"
 #include "fft.h"
+#include "kmeans.h"
 #include "library.h"
 #include "playlist.h"
 #include "playlist_overlay.h"
 #include "playlist_pane.h"
 #include "runtime_config.h"
+
+#define N_CLUSTERS 12
 
 typedef enum {
     PANE_MAIN,
@@ -58,12 +61,32 @@ typedef struct {
 
     Overlay overlay;
     PlaylistPane playlist_pane;
+    Color** fft_colors;
 } Wisp;
 
 Wisp wisp_init(int argc, char** argv);
 void wisp_tick(Wisp* wisp);
 
 static const Album* wisp_get_selected_album(const Wisp* wisp);
+
+static Color color_lerp(Color a, Color b, float t) {
+    return (Color){
+        .r = (unsigned char)(a.r + (b.r - a.r) * t),
+        .g = (unsigned char)(a.g + (b.g - a.g) * t),
+        .b = (unsigned char)(a.b + (b.b - a.b) * t),
+        .a = (unsigned char)(a.a + (b.a - a.a) * t),
+    };
+}
+
+// https://stackoverflow.com/questions/596216/formula-to-determine-perceived-brightness-of-rgb-color
+static float color_lum(Color c) { return sqrtf((0.299 * (c.r * c.r) + 0.587 * (c.g * c.g) + 0.114 * (c.b * c.b))); }
+
+static int cmp_color_by_lum(const void* a, const void* b) {
+    if (a == NULL || b == NULL) return 0;
+    const Color* a_color = a;
+    const Color* b_color = b;
+    return color_lum(*a_color) - color_lum(*b_color);
+}
 
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_fft(const Wisp* w, Rectangle bound);
@@ -323,6 +346,14 @@ Wisp wisp_init(int argc, char** argv) {
         tex[i] = LoadTextureFromImage(img);
     }
 
+    Color** colors = malloc(sizeof(Color*) * lib.albums.count);
+    for (uint32_t i = 0; i < lib.albums.count; i++) {
+        Image im = LoadImageFromTexture(tex[i]);
+        colors[i] = kmeans(im, N_CLUSTERS, 4);
+        qsort(*colors, N_CLUSTERS, sizeof(Color), cmp_color_by_lum);
+        UnloadImage(im);
+    }
+
     double pre_playlist_load = GetTime();
     char* pl_dir = playlist_dir_path(cfg.custom_playlist_dir);
     playlist_ensure_dir(pl_dir);
@@ -336,16 +367,15 @@ Wisp wisp_init(int argc, char** argv) {
     TraceLog(LOG_INFO, "Loading playlist library took %lf s.", post_playlist_load - pre_playlist_load);
     TraceLog(LOG_INFO, "Our code took %lf s. to startup", post_playlist_load);
 
-    return (Wisp){
-        .font = font,
-        .library = lib,
-        .covers = tex,
-        .main_pane = MP_ALBUM,
-        .pane = PANE_MAIN,
-        .cli_config = cfg,
-        .playlists = playlists,
-        .playlist_dir = pl_dir,
-    };
+    return (Wisp){.font = font,
+                  .library = lib,
+                  .covers = tex,
+                  .main_pane = MP_ALBUM,
+                  .pane = PANE_MAIN,
+                  .cli_config = cfg,
+                  .playlists = playlists,
+                  .playlist_dir = pl_dir,
+                  .fft_colors = colors};
 }
 
 static void wisp_draw_visual_pane(Wisp* wisp) {
@@ -436,28 +466,59 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
 }
 
 static void draw_fft(const Wisp* w, Rectangle bound) {
-    float max = 0.0;
+    float max_h = 0.0f;
+
+    float heights[BARS];
     for (int i = 0; i < BARS; i++) {
         float t0 = (float)i / BARS;
         float t1 = (float)(i + 1) / BARS;
+
         float log_min = logf(1.0f), log_max = logf(NYQUIST_LIMIT);
         int k0 = (int)expf(log_min + (log_max - log_min) * t0);
         int k1 = (int)expf(log_min + (log_max - log_min) * t1);
         if (k1 <= k0) k1 = k0 + 1;
+
         float sum = 0;
         int cnt = 0;
         for (int k = k0; k < k1; k++) {
-            sum += w->magnitudes[k] * 1.25;
+            sum += w->magnitudes[k] * 1.25f;
             cnt++;
         }
+
         float mag = cnt > 0 ? sum / cnt : 0;
         mag = logf(1.0f + mag);
+
         float h = mag * bound.height / 3.0f;
-        if (h > max) max = h;
+        heights[i] = h;
+
+        if (h > max_h) max_h = h;
+    }
+
+    for (int i = 0; i < BARS; i++) {
+        float h = heights[i];
+
+        float norm_h = (max_h > 0.0f) ? (h / max_h) : 0.0f;
+        if (norm_h > 1.0f) norm_h = 1.0f;
+
+        norm_h = powf(norm_h, 0.7f);
+
+        float pos = norm_h * (N_CLUSTERS - 1);
+        int idx0 = (int)floorf(pos);
+        int idx1 = idx0 + 1;
+
+        if (idx1 > N_CLUSTERS - 1) idx1 = N_CLUSTERS - 1;
+
+        float t = pos - (float)idx0;
+
+        Color c0 = w->fft_colors[w->selected_album][idx0];
+        Color c1 = w->fft_colors[w->selected_album][idx1];
+        Color c = color_lerp(c0, c1, t);
+
         int x0 = (int)(bound.x + ((float)i / BARS) * bound.width);
         int x1 = (int)(bound.x + ((float)(i + 1) / BARS) * bound.width);
         if (x1 <= x0) x1 = x0 + 1;
-        DrawRectangleGradientV(x0, (int)(bound.y + bound.height - h), x1 - x0, (int)h, ColorAlpha(WHITE, .0f),
-                               ColorAlpha(FOCUSED_TEXT_COLOR, 0.8f));
+
+        DrawRectangleGradientV(x0, (int)(bound.y + bound.height - h), x1 - x0, (int)h, ColorAlpha(c, 0.0f),
+                               ColorAlpha(c, 0.8f));
     }
 }
