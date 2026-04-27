@@ -1,8 +1,8 @@
 #include "draw_utils.h"
 
 #include <math.h>
-#include <raylib.h>
 
+#include "../extern/raylib/src/raylib.h"
 #include "compile_time_config.h"
 
 void draw_round_rect(Rectangle rect, Color c, float radius) {
