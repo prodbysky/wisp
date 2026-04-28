@@ -136,13 +136,16 @@ void wisp_tick(Wisp* wisp) {
         if (IsKeyPressed(KEY_TAB)) wisp_next_pane(wisp);
         if (IsKeyPressed(KEY_SPACE)) audio_toggle_playing_state(&wisp->audio);
 
-        if (IsKeyPressed(KEY_PERIOD) && shift) audio_skip_track_forward(&wisp->audio);
-        if (IsKeyPressed(KEY_COMMA) && shift) audio_skip_track_backward(&wisp->audio);
-        if (IsKeyPressed(KEY_PERIOD) && !shift) audio_try_seeking_by(&wisp->audio, 5.0f);
-        if (IsKeyPressed(KEY_COMMA) && !shift) audio_try_seeking_by(&wisp->audio, -5.0f);
+        if (IsKeyPressed(KEY_PERIOD) && shift && !ctrl) audio_skip_track_forward(&wisp->audio);
+        if (IsKeyPressed(KEY_COMMA) && shift && !ctrl) audio_skip_track_backward(&wisp->audio);
+        if (IsKeyPressed(KEY_PERIOD) && !shift && !ctrl) audio_try_seeking_by(&wisp->audio, 5);
+        if (IsKeyPressed(KEY_COMMA) && !shift && !ctrl) audio_try_seeking_by(&wisp->audio, -5);
 
         if (IsKeyPressed(KEY_S) && ctrl) wisp->audio.shuffle = !wisp->audio.shuffle;
         if (IsKeyPressed(KEY_R) && ctrl) wisp_next_loop_mode(wisp);
+
+        if (IsKeyPressed(KEY_COMMA) && ctrl) audio_change_master_volume_by(&wisp->audio, -0.05);
+        if (IsKeyPressed(KEY_PERIOD) && ctrl) audio_change_master_volume_by(&wisp->audio, 0.05);
 
         if (wisp->pane == PANE_MAIN) {
             if (wisp->main_pane == MP_ALBUM) {
@@ -368,7 +371,6 @@ Wisp wisp_init(int argc, char** argv) {
     TraceLog(LOG_INFO, "Loading playlist library took %lf s.", post_playlist_load - pre_playlist_load);
     TraceLog(LOG_INFO, "Our code took %lf s. to startup", post_playlist_load);
 
-
     return (Wisp){.font = font,
                   .library = lib,
                   .covers = tex,
@@ -377,7 +379,10 @@ Wisp wisp_init(int argc, char** argv) {
                   .cli_config = cfg,
                   .playlists = playlists,
                   .playlist_dir = pl_dir,
-                  .fft_colors = colors};
+                  .fft_colors = colors,
+                  .audio = audio_init()
+
+    };
 }
 
 static void wisp_draw_visual_pane(Wisp* wisp) {

@@ -1,5 +1,6 @@
 #include "audio.h"
 
+#include <raymath.h>
 #include <stdlib.h>
 
 static void list_push(TrackList* l, Track* t);
@@ -10,6 +11,8 @@ static size_t list_random_index(TrackList* l);
 
 static Track* queue_next(Audio* a);
 static Track* queue_prev(Audio* a);
+
+Audio audio_init() { return (Audio){.master_volume = 1}; }
 
 void audio_start_playback(Audio* a, Track* track) {
     if (track == NULL) return;
@@ -200,6 +203,16 @@ void audio_try_seeking_by(Audio* a, float diff) {
     if (pos > len) pos = len;
 
     SeekMusicStream(a->music, pos);
+}
+
+void audio_set_master_volume(Audio* a, float volume) {
+    a->master_volume = Clamp(volume, 0, 1);
+    SetMasterVolume(a->master_volume);
+}
+
+void audio_change_master_volume_by(Audio* a, float volume) {
+    a->master_volume = Clamp(a->master_volume + volume, 0, 1);
+    SetMasterVolume(a->master_volume);
 }
 
 static void list_push(TrackList* l, Track* t) { *yar_append(&l->items) = t; }

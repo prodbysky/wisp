@@ -61,6 +61,8 @@ The UI is split into four panes, cycled with `Tab`:
 | `Shift+,` | Skip to previous track |
 | `>` | Seek forward 5 seconds |
 | `<` | Seek backward 5 seconds |
+| `Ctrl+.` | Increase master volume by 5% |
+| `Ctrl+,` | Decrease master volume by 5% |
 | `Ctrl+s` | Toggle shuffle |
 | `Ctrl+r` | Cycle loop mode (none → one → all) |
 

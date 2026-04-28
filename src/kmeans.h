@@ -79,7 +79,6 @@ static Color* kmeans(Image image, int k, int max_it) {
                 cb[j] = pixels[idx].b;
             }
         }
-
     }
 
     Color* palette = (Color*)malloc(k * sizeof(Color));

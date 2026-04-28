@@ -3,11 +3,11 @@
 #include <FLAC/metadata.h>
 #include <assert.h>
 #include <dirent.h>
-#include <threads.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <threads.h>
 
 #include "../extern/dr_mp3.h"
 
@@ -127,12 +127,8 @@ Library prepare_library(const char* root_path) {
 
     WorkerCtx ctx = {.lib = &lib, .index = 0};
 
-    for (size_t i = 0; i < thread_count; i++) { 
-        thrd_create(&threads[i], worker, &ctx);
-    }
-    for (size_t i = 0; i < thread_count; i++) { 
-        thrd_join(threads[i], NULL);
-    }
+    for (size_t i = 0; i < thread_count; i++) { thrd_create(&threads[i], worker, &ctx); }
+    for (size_t i = 0; i < thread_count; i++) { thrd_join(threads[i], NULL); }
 
     // sort them by album
     for (size_t i = 0; i < lib.tracks.count; i++) {

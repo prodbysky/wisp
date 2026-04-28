@@ -27,11 +27,17 @@ typedef struct {
     Queue queue;
     bool shuffle;
     LoopMode loop_mode;
+    float master_volume;
 } Audio;
+
+Audio audio_init();
 
 void audio_start_playback(Audio* a, Track* track);
 void audio_stop_playback(Audio* a);
 void audio_toggle_playing_state(Audio* a);
+
+void audio_set_master_volume(Audio* a, float volume);
+void audio_change_master_volume_by(Audio* a, float volume);
 
 void audio_enqueue_single(Audio* a, Track* track);
 void audio_skip_track_forward(Audio* a);
