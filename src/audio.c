@@ -1,6 +1,6 @@
 #include "audio.h"
 
-#include <raymath.h>
+#include "../extern/raylib/src/raymath.h"
 #include <stdlib.h>
 
 static void list_push(TrackList* l, Track* t);
