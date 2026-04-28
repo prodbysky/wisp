@@ -54,7 +54,8 @@ static int cmp_color_by_lum(const void* a, const void* b) {
     if (a == NULL || b == NULL) return 0;
     const Color* a_color = a;
     const Color* b_color = b;
-    return color_lum(*a_color) - color_lum(*b_color);
+    float diff = color_lum(*a_color) - color_lum(*b_color);
+    return (diff > 0) - (diff < 0);
 }
 
 static int startup_worker(void* arg) {
@@ -87,7 +88,7 @@ static int startup_worker(void* arg) {
     playlist_ensure_dir(pl_dir);
 
     playlists_load(pl_dir, &lib, &ctx->playlists);
-    atomic_exchange(&ctx->done, true);
+    atomic_exchange_explicit(&ctx->done, true, memory_order_relaxed);
     return 0;
 }
 
@@ -176,7 +177,7 @@ void wisp_tick(Wisp* wisp) {
     const float WW = (float)GetScreenWidth();
     const float WH = (float)GetScreenHeight();
     if (wisp->startup_done) goto over;
-    if (atomic_load(&wisp->ctx->done) == true) {
+    if (atomic_load_explicit(&wisp->ctx->done, memory_order_relaxed) == true) {
         wisp->library = wisp->ctx->lib;
         wisp->covers = malloc(wisp->library.albums.count * sizeof(Texture2D));
         for (size_t i = 0; i < wisp->library.albums.count; i++) {
@@ -184,17 +185,17 @@ void wisp_tick(Wisp* wisp) {
         }
         wisp->playlists = wisp->ctx->playlists;
         wisp->fft_colors = wisp->ctx->colors;
-        wisp->startup_done = true;
         for (uint32_t i = 0; i < wisp->library.albums.count; i++) {
             free(wisp->library.albums.items[i].tracks.items[0]->cover);
         }
         free(wisp->ctx->images);
         free(wisp->ctx);
+        wisp->startup_done = true;
     } else {
         BeginDrawing();
         ClearBackground(BACKGROUND_COLOR);
-        Vector2 size = MeasureTextEx(wisp->font, "Loading...", FONT_SIZE, 0.0);
-        DrawTextEx(wisp->font, "Loading...", (Vector2){.x = (WW - size.x) / 2, .y = (WH - size.y) / 2}, FONT_SIZE, 0.0, FOCUSED_TEXT_COLOR);
+        Vector2 size = MeasureTextEx(wisp->font, "loading", FONT_SIZE, 0.0);
+        DrawTextEx(wisp->font, "loading", (Vector2){.x = WW / 2 - size.x / 2, .y = WH / 2 - size.y / 2}, FONT_SIZE, 0.0, FOCUSED_TEXT_COLOR);
         EndDrawing();
         return;
     }
@@ -244,25 +245,28 @@ over:
                 const float top_bound = wisp->track_scroll + entry_height;
                 const float bottom_bound = wisp->track_scroll + WH - entry_height;
                 const float cur_off = (float)wisp->selected_track * entry_height;
-                float max_scroll = (float)wisp_get_selected_album(wisp)->tracks.count * entry_height - WH;
-                if (max_scroll < 0) max_scroll = 0;
-                if (wisp->wanted_track_scroll < 0) wisp->wanted_track_scroll = 0;
-                if (wisp->wanted_track_scroll > max_scroll) wisp->wanted_track_scroll = max_scroll;
-                if (cur_off < top_bound) wisp->wanted_track_scroll = cur_off - entry_height;
-                if (cur_off > bottom_bound) wisp->wanted_track_scroll = cur_off - (WH - entry_height);
+                const Album* album = wisp_get_selected_album(wisp);
+                if (album) {
+                    float max_scroll = (float)album->tracks.count * entry_height - WH;
+                    if (max_scroll < 0) max_scroll = 0;
+                    if (wisp->wanted_track_scroll < 0) wisp->wanted_track_scroll = 0;
+                    if (wisp->wanted_track_scroll > max_scroll) wisp->wanted_track_scroll = max_scroll;
+                    if (cur_off < top_bound) wisp->wanted_track_scroll = cur_off - entry_height;
+                    if (cur_off > bottom_bound) wisp->wanted_track_scroll = cur_off - (WH - entry_height);
 
-                if (IsKeyPressed(KEY_J)) {
-                    if (wisp->selected_track < wisp_get_selected_album(wisp)->tracks.count - 1) wisp->selected_track++;
-                }
-                if (IsKeyPressed(KEY_K)) {
-                    if (wisp->selected_track > 0) wisp->selected_track--;
-                }
-                if (IsKeyPressed(KEY_H)) wisp->main_pane = MP_ALBUM;
+                    if (IsKeyPressed(KEY_J)) {
+                        if (wisp->selected_track < album->tracks.count - 1) wisp->selected_track++;
+                    }
+                    if (IsKeyPressed(KEY_K)) {
+                        if (wisp->selected_track > 0) wisp->selected_track--;
+                    }
+                    if (IsKeyPressed(KEY_H)) wisp->main_pane = MP_ALBUM;
 
-                if (IsKeyPressed(KEY_A) && shift)
-                    overlay_open(&wisp->overlay, true, wisp->selected_album, wisp->selected_track, &wisp->playlists);
-                else if (IsKeyPressed(KEY_A))
-                    overlay_open(&wisp->overlay, false, wisp->selected_album, wisp->selected_track, &wisp->playlists);
+                    if (IsKeyPressed(KEY_A) && shift)
+                        overlay_open(&wisp->overlay, true, wisp->selected_album, wisp->selected_track, &wisp->playlists);
+                    else if (IsKeyPressed(KEY_A))
+                        overlay_open(&wisp->overlay, false, wisp->selected_album, wisp->selected_track, &wisp->playlists);
+                }
             }
 
             if (IsKeyPressed(KEY_ENTER)) wisp_play_selected_track(wisp);
@@ -323,13 +327,14 @@ over:
             {
                 Vector2 cursor = {PAD + WW / 3, PAD - wisp->track_scroll};
                 BeginScissorMode((int)(cursor.x - 3 * PAD), 0, (int)((WW * 2) / 3 + PAD), (int)WH);
-                for (size_t ti = 0; ti < wisp_get_selected_album(wisp)->tracks.count; ti++) {
+                const Album* album = wisp_get_selected_album(wisp);
+                for (size_t ti = 0; album && ti < album->tracks.count; ti++) {
                     const bool focused = (ti == wisp->selected_track);
                     const Color text_color = focused ? FOCUSED_TEXT_COLOR : UNFOCUSED_TEXT_COLOR;
                     const Rectangle bg_rect = {cursor.x - 2, cursor.y, 2 * (WW / 3) - PAD * 2, FONT_SIZE + 4};
                     draw_round_rect(bg_rect, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
 
-                    draw_text_with_shadow(wisp_get_selected_album(wisp)->tracks.items[ti]->title, wisp->font,
+                    draw_text_with_shadow(album->tracks.items[ti]->title, wisp->font,
                                           text_color, SHADOW_COLOR, (Vector2){.x = cursor.x + 2, .y = cursor.y + 2});
                     cursor.y += TRACK_ENTRY_H;
                 }
@@ -414,16 +419,12 @@ Wisp wisp_init(int argc, char** argv) {
     thrd_create(&th, startup_worker, startup);
 
     return (Wisp){.font = font,
-                  // .library = lib,
-                  // .covers = tex,
                   .main_pane = MP_ALBUM,
                   .pane = PANE_MAIN,
                   .cli_config = cfg,
-                  // .playlists = playlists,
                   .playlist_dir = cfg.custom_playlist_dir,
-                  // .fft_colors = colors,
                   .audio = audio_init(),
-                  .ctx = startup
+                  .ctx = startup,
     };
 }
 
@@ -444,6 +445,7 @@ static void wisp_draw_visual_pane(Wisp* wisp) {
 static void wisp_next_pane(Wisp* wisp) { wisp->pane = (wisp->pane + 1) % PANE_COUNT; }
 
 static const Album* wisp_get_selected_album(const Wisp* wisp) {
+    if (wisp->selected_album >= wisp->library.albums.count) return NULL;
     return &wisp->library.albums.items[wisp->selected_album];
 }
 
