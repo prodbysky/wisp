@@ -120,6 +120,7 @@ typedef struct {
     Audio audio;
 
     float magnitudes[FFT_SIZE / 2];
+    float fft_max;
 
     Playlists playlists;
     char* playlist_dir;
@@ -147,7 +148,7 @@ static Color color_lerp(Color a, Color b, float t) {
 
 
 static void draw_queue(const Wisp* w, Rectangle bound);
-static void draw_fft(const Wisp* w, Rectangle bound);
+static void draw_fft(Wisp* w, Rectangle bound);
 static void wisp_draw_visual_pane(Wisp* wisp);
 
 static void wisp_next_pane(Wisp* wisp);
@@ -434,6 +435,7 @@ Wisp wisp_init(int argc, char** argv) {
                   .playlist_dir = cfg.custom_playlist_dir,
                   .audio = audio_init(),
                   .ctx = startup,
+                  .fft_max = 1.0
     };
 }
 
@@ -489,7 +491,7 @@ static void prepare_fft_vis(Wisp* wisp) {
             float norm = (db - (-20.0f)) / (20.0f - (-20.0f));
             if (norm < 0) norm = 0;
             if (norm > 1) norm = 1;
-            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.7f + norm * 0.3f;
+            wisp->magnitudes[k] = wisp->magnitudes[k] * 0.8f + norm * 0.2f;
         }
     }
 }
@@ -526,7 +528,7 @@ static void draw_queue(const Wisp* w, Rectangle bound) {
     }
 }
 
-static void draw_fft(const Wisp* w, Rectangle bound) {
+static void draw_fft(Wisp* w, Rectangle bound) {
     float max_h = 0.0f;
 
     float heights[BARS];
@@ -554,11 +556,26 @@ static void draw_fft(const Wisp* w, Rectangle bound) {
 
         if (h > max_h) max_h = h;
     }
+    float smoothed[BARS];
+
+    for (int i = 0; i < BARS; i++) {
+        float sum = heights[i] * 0.6f;
+
+        if (i > 0)         sum += heights[i - 1] * 0.2f;
+        if (i < BARS - 1)  sum += heights[i + 1] * 0.2f;
+
+        smoothed[i] = sum;
+    }
+    memcpy(heights, smoothed, sizeof(float) * BARS);
 
     for (int i = 0; i < BARS; i++) {
         float h = heights[i];
 
-        float norm_h = (max_h > 0.0f) ? (h / max_h) : 0.0f;
+        if (max_h > w->fft_max)
+            w->fft_max = max_h;
+        else
+            w->fft_max *= 0.99f;
+        float norm_h = (w->fft_max > 0.0f) ? (h / w->fft_max) : 0.0f;
         if (norm_h > 1.0f) norm_h = 1.0f;
 
         norm_h = powf(norm_h, 0.7f);
@@ -566,20 +583,75 @@ static void draw_fft(const Wisp* w, Rectangle bound) {
         float pos = norm_h * (N_CLUSTERS - 1);
         int idx0 = (int)floorf(pos);
         int idx1 = idx0 + 1;
-
         if (idx1 > N_CLUSTERS - 1) idx1 = N_CLUSTERS - 1;
 
         float t = pos - (float)idx0;
 
-        Color c0 = w->fft_colors[w->selected_album][idx0];
-        Color c1 = w->fft_colors[w->selected_album][idx1];
-        Color c = color_lerp(c0, c1, t);
+        Color c = color_lerp(
+            w->fft_colors[w->selected_album][idx0],
+            w->fft_colors[w->selected_album][idx1],
+            t
+        );
+
+        Color prev_c = c;
+        Color next_c = c;
+
+        if (i > 0) {
+            float prev_h = heights[i - 1];
+            float prev_norm = (max_h > 0.0f) ? (prev_h / max_h) : 0.0f;
+            float prev_pos = powf(prev_norm, 0.7f) * (N_CLUSTERS - 1);
+
+            int p0 = (int)floorf(prev_pos);
+            int p1 = p0 + 1;
+            if (p1 > N_CLUSTERS - 1) p1 = N_CLUSTERS - 1;
+
+            float pt = prev_pos - (float)p0;
+
+            prev_c = color_lerp(
+                w->fft_colors[w->selected_album][p0],
+                w->fft_colors[w->selected_album][p1],
+                pt
+            );
+        }
+
+        if (i < BARS - 1) {
+            float next_h = heights[i + 1];
+            float next_norm = (max_h > 0.0f) ? (next_h / max_h) : 0.0f;
+            float next_pos = powf(next_norm, 0.7f) * (N_CLUSTERS - 1);
+
+            int n0 = (int)floorf(next_pos);
+            int n1 = n0 + 1;
+            if (n1 > N_CLUSTERS - 1) n1 = N_CLUSTERS - 1;
+
+            float nt = next_pos - (float)n0;
+
+            next_c = color_lerp(
+                w->fft_colors[w->selected_album][n0],
+                w->fft_colors[w->selected_album][n1],
+                nt
+            );
+        }
+
+        Color c_left  = color_lerp(prev_c, c, 0.5f);
+        Color c_right = color_lerp(c, next_c, 0.5f);
 
         int x0 = (int)(bound.x + ((float)i / BARS) * bound.width);
         int x1 = (int)(bound.x + ((float)(i + 1) / BARS) * bound.width);
         if (x1 <= x0) x1 = x0 + 1;
 
-        DrawRectangleGradientV(x0, (int)(bound.y + bound.height - h), x1 - x0, (int)h, ColorAlpha(c, 0.0f),
-                               ColorAlpha(c, 0.8f));
+        Rectangle r = {
+            (float)x0,
+            (float)(bound.y + bound.height - h),
+            (float)(x1 - x0),
+            h
+        };
+
+        DrawRectangleGradientEx(
+            r,
+            ColorAlpha(c_left,  1.0f),
+            ColorAlpha(c_left,  1.0f),
+            ColorAlpha(c_right, 1.0f),
+            ColorAlpha(c_right, 1.0f)
+        );
     }
 }
