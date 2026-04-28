@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <threads.h>
+#include <time.h>
 
 #include "../extern/raylib/src/raylib.h"
 #include "audio.h"
@@ -80,7 +80,8 @@ static int startup_worker(void* arg) {
             .data = malloc(128 * 128 * 3),
             .mipmaps = 1,
         };
-        ImageDraw(&new, img, (Rectangle){.width = t->cover_w, .height = t->cover_h}, (Rectangle){.width = 128, .height = 128}, WHITE);
+        ImageDraw(&new, img, (Rectangle){.width = t->cover_w, .height = t->cover_h},
+                  (Rectangle){.width = 128, .height = 128}, WHITE);
         ctx->images[i] = new;
     }
     ctx->lib = lib;
@@ -146,7 +147,6 @@ static Color color_lerp(Color a, Color b, float t) {
     };
 }
 
-
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_fft(Wisp* w, Rectangle bound);
 static void wisp_draw_visual_pane(Wisp* wisp);
@@ -205,7 +205,8 @@ void wisp_tick(Wisp* wisp) {
         BeginDrawing();
         ClearBackground(BACKGROUND_COLOR);
         Vector2 size = MeasureTextEx(wisp->font, "loading", FONT_SIZE, 0.0);
-        DrawTextEx(wisp->font, "loading", (Vector2){.x = WW / 2 - size.x / 2, .y = WH / 2 - size.y / 2}, FONT_SIZE, 0.0, FOCUSED_TEXT_COLOR);
+        DrawTextEx(wisp->font, "loading", (Vector2){.x = WW / 2 - size.x / 2, .y = WH / 2 - size.y / 2}, FONT_SIZE, 0.0,
+                   FOCUSED_TEXT_COLOR);
         EndDrawing();
         return;
     }
@@ -273,9 +274,11 @@ over:
                     if (IsKeyPressed(KEY_H)) wisp->main_pane = MP_ALBUM;
 
                     if (IsKeyPressed(KEY_A) && shift)
-                        overlay_open(&wisp->overlay, true, wisp->selected_album, wisp->selected_track, &wisp->playlists);
+                        overlay_open(&wisp->overlay, true, wisp->selected_album, wisp->selected_track,
+                                     &wisp->playlists);
                     else if (IsKeyPressed(KEY_A))
-                        overlay_open(&wisp->overlay, false, wisp->selected_album, wisp->selected_track, &wisp->playlists);
+                        overlay_open(&wisp->overlay, false, wisp->selected_album, wisp->selected_track,
+                                     &wisp->playlists);
                 }
             }
 
@@ -344,8 +347,8 @@ over:
                     const Rectangle bg_rect = {cursor.x - 2, cursor.y, 2 * (WW / 3) - PAD * 2, FONT_SIZE + 4};
                     draw_round_rect(bg_rect, FOCUSED_PANEL_COLOR, RECTANGLE_ROUNDNESS);
 
-                    draw_text_with_shadow(album->tracks.items[ti]->title, wisp->font,
-                                          text_color, SHADOW_COLOR, (Vector2){.x = cursor.x + 2, .y = cursor.y + 2});
+                    draw_text_with_shadow(album->tracks.items[ti]->title, wisp->font, text_color, SHADOW_COLOR,
+                                          (Vector2){.x = cursor.x + 2, .y = cursor.y + 2});
                     cursor.y += TRACK_ENTRY_H;
                 }
                 EndScissorMode();
@@ -435,8 +438,7 @@ Wisp wisp_init(int argc, char** argv) {
                   .playlist_dir = cfg.custom_playlist_dir,
                   .audio = audio_init(),
                   .ctx = startup,
-                  .fft_max = 1.0
-    };
+                  .fft_max = 1.0};
 }
 
 static void wisp_draw_visual_pane(Wisp* wisp) {
@@ -561,8 +563,8 @@ static void draw_fft(Wisp* w, Rectangle bound) {
     for (int i = 0; i < BARS; i++) {
         float sum = heights[i] * 0.6f;
 
-        if (i > 0)         sum += heights[i - 1] * 0.2f;
-        if (i < BARS - 1)  sum += heights[i + 1] * 0.2f;
+        if (i > 0) sum += heights[i - 1] * 0.2f;
+        if (i < BARS - 1) sum += heights[i + 1] * 0.2f;
 
         smoothed[i] = sum;
     }
@@ -587,11 +589,7 @@ static void draw_fft(Wisp* w, Rectangle bound) {
 
         float t = pos - (float)idx0;
 
-        Color c = color_lerp(
-            w->fft_colors[w->selected_album][idx0],
-            w->fft_colors[w->selected_album][idx1],
-            t
-        );
+        Color c = color_lerp(w->fft_colors[w->selected_album][idx0], w->fft_colors[w->selected_album][idx1], t);
 
         Color prev_c = c;
         Color next_c = c;
@@ -607,11 +605,7 @@ static void draw_fft(Wisp* w, Rectangle bound) {
 
             float pt = prev_pos - (float)p0;
 
-            prev_c = color_lerp(
-                w->fft_colors[w->selected_album][p0],
-                w->fft_colors[w->selected_album][p1],
-                pt
-            );
+            prev_c = color_lerp(w->fft_colors[w->selected_album][p0], w->fft_colors[w->selected_album][p1], pt);
         }
 
         if (i < BARS - 1) {
@@ -625,33 +619,19 @@ static void draw_fft(Wisp* w, Rectangle bound) {
 
             float nt = next_pos - (float)n0;
 
-            next_c = color_lerp(
-                w->fft_colors[w->selected_album][n0],
-                w->fft_colors[w->selected_album][n1],
-                nt
-            );
+            next_c = color_lerp(w->fft_colors[w->selected_album][n0], w->fft_colors[w->selected_album][n1], nt);
         }
 
-        Color c_left  = color_lerp(prev_c, c, 0.5f);
+        Color c_left = color_lerp(prev_c, c, 0.5f);
         Color c_right = color_lerp(c, next_c, 0.5f);
 
         int x0 = (int)(bound.x + ((float)i / BARS) * bound.width);
         int x1 = (int)(bound.x + ((float)(i + 1) / BARS) * bound.width);
         if (x1 <= x0) x1 = x0 + 1;
 
-        Rectangle r = {
-            (float)x0,
-            (float)(bound.y + bound.height - h),
-            (float)(x1 - x0),
-            h
-        };
+        Rectangle r = {(float)x0, (float)(bound.y + bound.height - h), (float)(x1 - x0), h};
 
-        DrawRectangleGradientEx(
-            r,
-            ColorAlpha(c_left,  1.0f),
-            ColorAlpha(c_left,  1.0f),
-            ColorAlpha(c_right, 1.0f),
-            ColorAlpha(c_right, 1.0f)
-        );
+        DrawRectangleGradientEx(r, ColorAlpha(c_left, 1.0f), ColorAlpha(c_left, 1.0f), ColorAlpha(c_right, 1.0f),
+                                ColorAlpha(c_right, 1.0f));
     }
 }

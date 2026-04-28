@@ -33,11 +33,10 @@ typedef struct {
 } Overlay;
 
 void overlay_update(Overlay* overlay, Playlists* playlists, const char* playlists_dir, const Albums* albums);
-void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Playlists* playlists) ;
+void overlay_draw(const Overlay* overlay, Rectangle bound, Font font, const Playlists* playlists);
 void overlay_open(Overlay* overlay, bool whole_album, size_t selected_album, size_t selected_track,
                   const Playlists* playlists);
 void overlay_close(Overlay* overlay);
 void overlay_rebuild_filter(Overlay* overlay, const Playlists* playlists);
 void overlay_handle_char(Overlay* overlay, int ch, const Playlists* playlists);
 void overlay_confirm(Overlay* overlay, Playlists* playlists, const char* playlists_dir, const Albums* albums);
-

@@ -1,7 +1,8 @@
 #include "audio.h"
 
-#include "../extern/raylib/src/raymath.h"
 #include <stdlib.h>
+
+#include "../extern/raylib/src/raymath.h"
 
 static void list_push(TrackList* l, Track* t);
 static Track* list_pop_front(TrackList* l);

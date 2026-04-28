@@ -27,28 +27,17 @@ void fill_fft_buffer_callback(void* samples, uint32_t n_samples) {
     }
 }
 
-void compute_fft(float _Complex *out) {
-    for (int i = 0; i < FFT_SIZE; i++) {
-        out[i] = CMPLX(fft_shared_buf[i], 0);
-    }
+void compute_fft(float _Complex* out) {
+    for (int i = 0; i < FFT_SIZE; i++) { out[i] = CMPLX(fft_shared_buf[i], 0); }
 
     fft_internal(out, FFT_SIZE);
 }
 
+bool get_fft_ready() { return fft_shared_buf_ready; }
 
-bool get_fft_ready() {
-    return fft_shared_buf_ready;
-}
+float* get_fft_shared_buf() { return fft_shared_buf; }
 
-float* get_fft_shared_buf() {
-    return fft_shared_buf;
-}
-
-void fft_consumed() {
-    fft_shared_buf_ready = false;
-}
-
-
+void fft_consumed() { fft_shared_buf_ready = false; }
 
 static void fft_internal(float _Complex* buf, int n) {
     if (n <= 1) return;
@@ -72,18 +61,10 @@ static void fft_internal(float _Complex* buf, int n) {
         float cos_a = cosf(angle);
         float sin_a = sinf(angle);
 
-        float _Complex t = CMPLX(
-            cos_a * creal(odd[k]) - sin_a * cimag(odd[k]),
-            cos_a * cimag(odd[k]) + sin_a * creal(odd[k])
-        );
+        float _Complex t =
+            CMPLX(cos_a * creal(odd[k]) - sin_a * cimag(odd[k]), cos_a * cimag(odd[k]) + sin_a * creal(odd[k]));
 
-        buf[k] = CMPLX(
-            creal(even[k]) + creal(t),
-            cimag(even[k]) + cimag(t)
-        );
-        buf[k + half] = CMPLX(
-            creal(even[k]) - creal(t),
-            cimag(even[k]) - cimag(t)
-        );
+        buf[k] = CMPLX(creal(even[k]) + creal(t), cimag(even[k]) + cimag(t));
+        buf[k + half] = CMPLX(creal(even[k]) - creal(t), cimag(even[k]) - cimag(t));
     }
 }

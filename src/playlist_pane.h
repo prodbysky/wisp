@@ -1,9 +1,9 @@
 
+#include "../extern/raylib/src/raymath.h"
+#include "audio.h"
 #include "compile_time_config.h"
 #include "draw_utils.h"
 #include "playlist.h"
-#include "../extern/raylib/src/raymath.h"
-#include "audio.h"
 
 typedef enum {
     PPS_PLAYLIST,
@@ -22,4 +22,3 @@ typedef struct {
 
 void playlist_pane_update(PlaylistPane* pane, Rectangle bound, const Playlists* playlists, Audio* audio);
 void playlist_pane_draw(const PlaylistPane* pane, Rectangle bound, Font font, const Playlists* playlists);
-
