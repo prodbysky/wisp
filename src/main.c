@@ -421,16 +421,17 @@ static void wisp_queue_album_from_the_selected_track(Wisp* wisp) {
 }
 
 static void prepare_fft_vis(Wisp* wisp) {
-    if (fft_shared_buf_ready && wisp->pane == PANE_VISUAL) {
-        fft_shared_buf_ready = 0;
-        static Complex out[FFT_SIZE];
+    if (get_fft_ready() && wisp->pane == PANE_VISUAL) {
+        fft_consumed();
+        static float _Complex out[FFT_SIZE];
+        float* shared_buf = get_fft_shared_buf();
         for (int i = 0; i < FFT_SIZE; i++) {
             float w = 0.5f * (1.0f - cosf(2.0f * PI * i / (FFT_SIZE - 1)));
-            fft_shared_buf[i] *= w;
+            shared_buf[i] *= w;
         }
-        compute_fft(fft_shared_buf, out, FFT_SIZE);
+        compute_fft(out);
         for (int k = 0; k < FFT_SIZE / 2; k++) {
-            float mag = sqrtf(out[k].real * out[k].real + out[k].imag * out[k].imag);
+            float mag = sqrtf(creal(out[k]) * creal(out[k]) + cimag(out[k]) * cimag(out[k]));
             float db = 20.0f * log10f(mag + 1e-6f);
             float norm = (db - (-20.0f)) / (20.0f - (-20.0f));
             if (norm < 0) norm = 0;
