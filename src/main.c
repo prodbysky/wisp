@@ -2,11 +2,13 @@
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <threads.h>
 
 #include "../extern/raylib/src/raylib.h"
 #include "audio.h"
@@ -36,6 +38,60 @@ typedef enum {
 } MainPane;
 
 typedef struct {
+    atomic_bool done;
+    char* root_path;
+    char* playlist_path;
+    Image* images;
+    Color** colors;
+    Library lib;
+    Playlists playlists;
+} StartupWorkCtx;
+
+// https://stackoverflow.com/questions/596216/formula-to-determine-perceived-brightness-of-rgb-color
+static float color_lum(Color c) { return sqrtf((0.299 * (c.r * c.r) + 0.587 * (c.g * c.g) + 0.114 * (c.b * c.b))); }
+
+static int cmp_color_by_lum(const void* a, const void* b) {
+    if (a == NULL || b == NULL) return 0;
+    const Color* a_color = a;
+    const Color* b_color = b;
+    return color_lum(*a_color) - color_lum(*b_color);
+}
+
+static int startup_worker(void* arg) {
+    StartupWorkCtx* ctx = arg;
+
+    Library lib = prepare_library(ctx->root_path);
+    ctx->images = malloc(lib.albums.count * sizeof(Image));
+
+    for (size_t i = 0; i < lib.albums.count; i++) {
+        Track* t = lib.albums.items[i].tracks.items[0];
+        Image img = {
+            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+            .width = t->cover_w,
+            .height = t->cover_h,
+            .data = t->cover,
+            .mipmaps = 1,
+        };
+        ctx->images[i] = img;
+    }
+    ctx->lib = lib;
+
+    ctx->colors = malloc(sizeof(Color*) * lib.albums.count);
+    for (uint32_t i = 0; i < lib.albums.count; i++) {
+        Image im = ctx->images[i];
+        ctx->colors[i] = kmeans(im, N_CLUSTERS, 4);
+        qsort(ctx->colors[i], N_CLUSTERS, sizeof(Color), cmp_color_by_lum);
+    }
+
+    char* pl_dir = playlist_dir_path(ctx->playlist_path);
+    playlist_ensure_dir(pl_dir);
+
+    playlists_load(pl_dir, &lib, &ctx->playlists);
+    atomic_exchange(&ctx->done, true);
+    return 0;
+}
+
+typedef struct {
     Config cli_config;
     Library library;
     Font font;
@@ -62,6 +118,8 @@ typedef struct {
     Overlay overlay;
     PlaylistPane playlist_pane;
     Color** fft_colors;
+    StartupWorkCtx* ctx;
+    bool startup_done;
 } Wisp;
 
 Wisp wisp_init(int argc, char** argv);
@@ -78,15 +136,6 @@ static Color color_lerp(Color a, Color b, float t) {
     };
 }
 
-// https://stackoverflow.com/questions/596216/formula-to-determine-perceived-brightness-of-rgb-color
-static float color_lum(Color c) { return sqrtf((0.299 * (c.r * c.r) + 0.587 * (c.g * c.g) + 0.114 * (c.b * c.b))); }
-
-static int cmp_color_by_lum(const void* a, const void* b) {
-    if (a == NULL || b == NULL) return 0;
-    const Color* a_color = a;
-    const Color* b_color = b;
-    return color_lum(*a_color) - color_lum(*b_color);
-}
 
 static void draw_queue(const Wisp* w, Rectangle bound);
 static void draw_fft(const Wisp* w, Rectangle bound);
@@ -126,6 +175,30 @@ int main(int argc, char** argv) {
 void wisp_tick(Wisp* wisp) {
     const float WW = (float)GetScreenWidth();
     const float WH = (float)GetScreenHeight();
+    if (wisp->startup_done) goto over;
+    if (atomic_load(&wisp->ctx->done) == true) {
+        wisp->library = wisp->ctx->lib;
+        wisp->covers = malloc(wisp->library.albums.count * sizeof(Texture2D));
+        for (size_t i = 0; i < wisp->library.albums.count; i++) {
+            wisp->covers[i] = LoadTextureFromImage(wisp->ctx->images[i]);
+        }
+        wisp->playlists = wisp->ctx->playlists;
+        wisp->fft_colors = wisp->ctx->colors;
+        wisp->startup_done = true;
+        for (uint32_t i = 0; i < wisp->library.albums.count; i++) {
+            free(wisp->library.albums.items[i].tracks.items[0]->cover);
+        }
+        free(wisp->ctx->images);
+        free(wisp->ctx);
+    } else {
+        BeginDrawing();
+        ClearBackground(BACKGROUND_COLOR);
+        Vector2 size = MeasureTextEx(wisp->font, "Loading...", FONT_SIZE, 0.0);
+        DrawTextEx(wisp->font, "Loading...", (Vector2){.x = (WW - size.x) / 2, .y = (WH - size.y) / 2}, FONT_SIZE, 0.0, FOCUSED_TEXT_COLOR);
+        EndDrawing();
+        return;
+    }
+over:
 
     if (wisp->overlay.mode != OVERLAY_NONE) {
         overlay_update(&wisp->overlay, &wisp->playlists, wisp->playlist_dir, &wisp->library.albums);
@@ -319,9 +392,6 @@ Wisp wisp_init(int argc, char** argv) {
         }
         closedir(d);
     }
-    double config_setup_time = GetTime();
-    Library lib = prepare_library(cfg.custom_root_path);
-    double library_load_time = GetTime();
 
     SetWindowState(FLAG_MSAA_4X_HINT);
     InitWindow(1280, 720, "wispy");
@@ -335,53 +405,25 @@ Wisp wisp_init(int argc, char** argv) {
     Font font = LoadFontEx("res/Vollkorn-Medium.ttf", FONT_SIZE, NULL, 0);
     SetTextureFilter(font.texture, TEXTURE_FILTER_ANISOTROPIC_16X);
 
-    Texture2D* tex = malloc(lib.albums.count * sizeof(Texture2D));
+    StartupWorkCtx* startup = calloc(1, sizeof(StartupWorkCtx));
+    startup->done = false;
+    startup->root_path = cfg.custom_root_path;
+    startup->playlist_path = cfg.custom_playlist_dir;
 
-    for (size_t i = 0; i < lib.albums.count; i++) {
-        Track* t = lib.albums.items[i].tracks.items[0];
-        Image img = {
-            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
-            .width = t->cover_w,
-            .height = t->cover_h,
-            .data = t->cover,
-            .mipmaps = 1,
-        };
-        tex[i] = LoadTextureFromImage(img);
-        free(t->cover);
-    }
-
-    Color** colors = malloc(sizeof(Color*) * lib.albums.count);
-    for (uint32_t i = 0; i < lib.albums.count; i++) {
-        Image im = LoadImageFromTexture(tex[i]);
-        colors[i] = kmeans(im, N_CLUSTERS, 4);
-        qsort(*colors, N_CLUSTERS, sizeof(Color), cmp_color_by_lum);
-        UnloadImage(im);
-    }
-
-    double pre_playlist_load = GetTime();
-    char* pl_dir = playlist_dir_path(cfg.custom_playlist_dir);
-    playlist_ensure_dir(pl_dir);
-
-    Playlists playlists = {0};
-    playlists_load(pl_dir, &lib, &playlists);
-    double post_playlist_load = GetTime();
-
-    TraceLog(LOG_INFO, "Putting together config took %lf s.", config_setup_time);
-    TraceLog(LOG_INFO, "Loading music library took %lf s.", library_load_time - config_setup_time);
-    TraceLog(LOG_INFO, "Loading playlist library took %lf s.", post_playlist_load - pre_playlist_load);
-    TraceLog(LOG_INFO, "Our code took %lf s. to startup", post_playlist_load);
+    thrd_t th;
+    thrd_create(&th, startup_worker, startup);
 
     return (Wisp){.font = font,
-                  .library = lib,
-                  .covers = tex,
+                  // .library = lib,
+                  // .covers = tex,
                   .main_pane = MP_ALBUM,
                   .pane = PANE_MAIN,
                   .cli_config = cfg,
-                  .playlists = playlists,
-                  .playlist_dir = pl_dir,
-                  .fft_colors = colors,
-                  .audio = audio_init()
-
+                  // .playlists = playlists,
+                  .playlist_dir = cfg.custom_playlist_dir,
+                  // .fft_colors = colors,
+                  .audio = audio_init(),
+                  .ctx = startup
     };
 }
 
