@@ -73,7 +73,15 @@ static int startup_worker(void* arg) {
             .data = t->cover,
             .mipmaps = 1,
         };
-        ctx->images[i] = img;
+        Image new = {
+            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+            .width = 128,
+            .height = 128,
+            .data = malloc(128 * 128 * 3),
+            .mipmaps = 1,
+        };
+        ImageDraw(&new, img, (Rectangle){.width = t->cover_w, .height = t->cover_h}, (Rectangle){.width = 128, .height = 128}, WHITE);
+        ctx->images[i] = new;
     }
     ctx->lib = lib;
 
@@ -187,6 +195,7 @@ void wisp_tick(Wisp* wisp) {
         wisp->fft_colors = wisp->ctx->colors;
         for (uint32_t i = 0; i < wisp->library.albums.count; i++) {
             free(wisp->library.albums.items[i].tracks.items[0]->cover);
+            free(wisp->ctx->images[i].data);
         }
         free(wisp->ctx->images);
         free(wisp->ctx);
